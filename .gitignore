@@ -1,0 +1,28 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+users.json
+settings.json
+.secret_key
+
+fonts/
+.gstack/
+
+# Pipeline inbox/outbox folders (project-specific, not starter kit)
+# Pattern: <pipeline>_inbox/ and <pipeline>_outbox/  (PIPELINE in core.py)
+#
+# Ignore the CONTENTS (not the directories), so the one sample document can be
+# committed. Without it a fresh clone boots to an empty task board and there is
+# nothing to review — the repo can't demo itself.
+docs_inbox/*
+!docs_inbox/ups1_shipping_label.pdf
+docs_outbox/*
+!docs_outbox/.gitkeep
+extract_results/*
+!extract_results/docs/
+extract_results/docs/*
+!extract_results/docs/shipping_label/
+extract_results/docs/shipping_label/*
+!extract_results/docs/shipping_label/ups1_shipping_label.json

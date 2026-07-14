@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign In — Document Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Neutral, unbranded palette. Swap these values to skin the app for a
+       customer — nothing else in this file hardcodes a colour. */
+    :root {
+      --brand:      #262626;
+      --brand-dark: #0a0a0a;
+      --bg:         #ffffff;
+      --bg-muted:   #f5f5f5;
+      --border:     #d4d4d4;
+      --head:       #171717;
+      --body:       #404040;
+      --muted:      #737373;
+      --danger:     #dc2626;
+      --danger-bg:  #fef2f2;
+
+      --r:          12px;
+      --r-lg:       16px;
+      --r-pill:     999px;
+      --sh-md:      0 8px 24px rgba(0,0,0,.08);
+      --sh-lg:      0 18px 44px rgba(0,0,0,.11);
+      --sh-cta:     0 4px 14px rgba(0,0,0,.18);
+      --ease:       cubic-bezier(.22,.61,.36,1);
+    }
+
+    html, body {
+      min-height: 100%;
+      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      color: var(--body);
+      background: var(--bg);
+    }
+
+    /* Quiet backdrop: white with a faint grey wash. */
+    body::before {
+      content: "";
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(680px 480px at 82% -6%, rgba(0,0,0,.05), transparent 70%),
+        radial-gradient(560px 420px at 6% 104%, rgba(0,0,0,.035), transparent 70%);
+    }
+
+    .page {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 28px; padding: 40px 20px;
+    }
+
+    .logo-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+    .logo-mark {
+      width: 96px; height: 96px; border-radius: 20px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      box-shadow: var(--sh-md);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo-mark img { width: 54px; height: 54px; object-fit: contain; }
+
+    .wordmark { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--head); }
+
+    .card {
+      width: min(420px, 100%);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      box-shadow: var(--sh-lg);
+      overflow: hidden;
+    }
+    .card-accent { height: 3px; background: var(--brand); }
+    .card-inner  { padding: 32px 32px 28px; }
+
+    .card-title    { font-size: 22px; font-weight: 600; color: var(--head); letter-spacing: -0.01em; }
+    .card-subtitle { margin-top: 6px; margin-bottom: 24px; font-size: 15px; line-height: 1.6; color: var(--muted); }
+
+    .error-msg {
+      margin-bottom: 18px; padding: 11px 14px;
+      background: var(--danger-bg);
+      border: 1px solid var(--danger);
+      border-radius: var(--r);
+      color: #991b1b; font-size: 14px; font-weight: 600;
+    }
+
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block; margin-bottom: 6px;
+      font-size: 12px; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted);
+    }
+    .field input {
+      width: 100%; padding: 12px 14px;
+      font-family: inherit; font-size: 15px; color: var(--body);
+      background: var(--bg-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      transition: border-color 200ms var(--ease), box-shadow 200ms var(--ease), background 200ms var(--ease);
+    }
+    .field input::placeholder { color: #a3a3a3; }
+    .field input:focus {
+      outline: none;
+      background: var(--bg);
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(38,38,38,.25);
+    }
+
+    .btn-primary {
+      width: 100%; margin-top: 8px; padding: 13px 24px;
+      font-family: inherit; font-size: 15px; font-weight: 600;
+      color: #fff; background: var(--brand);
+      border: none; border-radius: var(--r-pill);
+      box-shadow: var(--sh-cta);
+      cursor: pointer;
+      transition: transform 200ms var(--ease), background 200ms var(--ease);
+    }
+    .btn-primary:hover  { background: var(--brand-dark); transform: translateY(-2px); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:focus-visible { outline: none; box-shadow: var(--sh-cta), 0 0 0 3px rgba(38,38,38,.35); }
+
+    .card-footer {
+      padding: 14px 32px;
+      background: var(--bg-muted);
+      border-top: 1px solid var(--border);
+      font-size: 13px; color: var(--muted); text-align: center;
+    }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+
+<div class="page">
+  <div class="logo-wrap">
+    <div class="logo-mark"><img src="/static/logo-mark.png" alt=""></div>
+    <div class="wordmark">Document Review</div>
+  </div>
+
+  <div class="card">
+    <div class="card-accent"></div>
+    <div class="card-inner">
+      <h1 class="card-title">Sign in</h1>
+      <p class="card-subtitle">Enter your credentials to access the review workspace.</p>
+
+      {% if error %}
+      <div class="error-msg" role="alert">{{ error }}</div>
+      {% endif %}
+
+      <form method="POST" action="/login">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn-primary">Sign in</button>
+      </form>
+    </div>
+    <div class="card-footer">Human-in-the-loop document review</div>
+  </div>
+</div>
+
+</body>
+</html>

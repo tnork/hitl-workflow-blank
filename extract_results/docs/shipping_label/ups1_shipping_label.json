@@ -1,0 +1,401 @@
+{
+  "source_file": "ups1_shipping_label.txt",
+  "document_type": "shipping_label",
+  "pipeline": "docs",
+  "extracted_fields": {
+    "tracking_number": "1Z T9R 4G3 02 3454 3429",
+    "carrier": "UPS",
+    "service_level": "UPS 2ND DAY AIR",
+    "ship_to_name": "TYLER NORKUS",
+    "ship_to_address": "142 POPE ST, LOUISVILLE KY 40206",
+    "ship_from_name": "PETER PAN BUS LINES",
+    "ship_from_address": "55 FRANK B MURRAY ST, SPRINGFIELD MA 01103",
+    "weight": "18 LBS",
+    "ship_date": "7/10/26, 5:57 PM",
+    "reference_number": "TN"
+  },
+  "extraction_metadata": {
+    "tracking_number": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "1Z T9R 4G3 02 3454 3429"
+    },
+    "carrier": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "UPS"
+    },
+    "service_level": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "UPS 2ND DAY AIR"
+    },
+    "ship_to_name": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "TYLER NORKUS"
+    },
+    "ship_to_address": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "142 POPE ST, LOUISVILLE KY 40206"
+    },
+    "ship_from_name": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "PETER PAN BUS LINES"
+    },
+    "ship_from_address": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "55 FRANK B MURRAY ST, SPRINGFIELD MA 01103"
+    },
+    "weight": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "18 LBS"
+    },
+    "ship_date": {
+      "references": [
+        "01373155-61e0-4039-8e85-ff5b941cd2c4"
+      ],
+      "value": "7/10/26, 5:57 PM"
+    },
+    "reference_number": {
+      "references": [
+        "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe"
+      ],
+      "value": "TN"
+    }
+  },
+  "confidence_summary": {
+    "avg_parse_confidence": null,
+    "total_chunks_scored": 0,
+    "low_confidence_chunk_count": 0,
+    "low_confidence_chunks": []
+  },
+  "chunks": [
+    {
+      "id": "01373155-61e0-4039-8e85-ff5b941cd2c4",
+      "grounding": {
+        "box": {
+          "bottom": 0.032807283103466034,
+          "left": 0.0340159647166729,
+          "right": 0.13669194281101227,
+          "top": 0.01699422299861908
+        },
+        "page": 0
+      },
+      "markdown": "<a id='01373155-61e0-4039-8e85-ff5b941cd2c4'></a>\n\n7/10/26, 5:57 PM",
+      "type": "marginalia"
+    },
+    {
+      "id": "67e58f72-31b1-4260-8bed-f38de2d6d8fe",
+      "grounding": {
+        "box": {
+          "bottom": 0.03340869024395943,
+          "left": 0.5211108922958374,
+          "right": 0.6212993860244751,
+          "top": 0.017328277230262756
+        },
+        "page": 0
+      },
+      "markdown": "<a id='67e58f72-31b1-4260-8bed-f38de2d6d8fe'></a>\n\nView/Print Label",
+      "type": "marginalia"
+    },
+    {
+      "id": "a7dbca30-62bd-4265-aa78-1a356e26ef99",
+      "grounding": {
+        "box": {
+          "bottom": 0.06428977847099304,
+          "left": 0.049961306154727936,
+          "right": 0.22720471024513245,
+          "top": 0.04176674038171768
+        },
+        "page": 0
+      },
+      "markdown": "<a id='a7dbca30-62bd-4265-aa78-1a356e26ef99'></a>\n\nView/Print Label",
+      "type": "text"
+    },
+    {
+      "id": "bbad6a1d-5c11-4e5b-a862-18d8dd1f2125",
+      "grounding": {
+        "box": {
+          "bottom": 0.22762277722358704,
+          "left": 0.08293169736862183,
+          "right": 0.7967495918273926,
+          "top": 0.08779575675725937
+        },
+        "page": 0
+      },
+      "markdown": "<a id='bbad6a1d-5c11-4e5b-a862-18d8dd1f2125'></a>\n\n1. Ensure there are no other shipping or tracking labels attached to your package. Select the Print button on the print dialogue box that appears. Note: If your browser does not support this function, select Print from the File menu to print the label.\n2. Fold the printed label at the solid line below. Place the label in a UPS Shipping Pouch. If you do not have a pouch, affix the folded label using clear plastic shipping tape over the entire label.\n3. GETTING YOUR SHIPMENT TO UPS\nCustomers with a scheduled Pickup\n* Your driver will pickup your shipment(s) as usual.",
+      "type": "text"
+    },
+    {
+      "id": "d9b75f40-fc8c-497a-83b9-5f9c8eed49b6",
+      "grounding": {
+        "box": {
+          "bottom": 0.3073113262653351,
+          "left": 0.09796512126922607,
+          "right": 0.784347653388977,
+          "top": 0.23570187389850616
+        },
+        "page": 0
+      },
+      "markdown": "<a id='d9b75f40-fc8c-497a-83b9-5f9c8eed49b6'></a>\n\n**Customers without a scheduled Pickup**\n* Schedule a Pickup on ups.com to have a UPS driver pickup all of your packages.\n* Take your package to any location of The UPS Store\u00ae, UPS Access Point(TM) location, UPS Drop Box, UPS Customer Center, Staples\u00ae or Authorized Shipping Outlet near you. To find the location nearest you, please visit the Locations Quick link at ups.com.",
+      "type": "text"
+    },
+    {
+      "id": "88bebe7c-bfe8-440d-8613-f89cbf87e640",
+      "grounding": {
+        "box": {
+          "bottom": 0.3716379404067993,
+          "left": 0.048001728951931,
+          "right": 0.2572099268436432,
+          "top": 0.3130054473876953
+        },
+        "page": 0
+      },
+      "markdown": "<a id='88bebe7c-bfe8-440d-8613-f89cbf87e640'></a>\n\nUPS Access Point\u2122\nCVS STORE # 4471\n600 STATE ST\nSPRINGFIELD MA 01109-4104",
+      "type": "text"
+    },
+    {
+      "id": "750c923f-c066-43d2-b158-0e3b309a408a",
+      "grounding": {
+        "box": {
+          "bottom": 0.3711327314376831,
+          "left": 0.29375314712524414,
+          "right": 0.5420671105384827,
+          "top": 0.3120132088661194
+        },
+        "page": 0
+      },
+      "markdown": "<a id='750c923f-c066-43d2-b158-0e3b309a408a'></a>\n\nUPS Access Point\u2122\nCVS STORE # 1972\n152 ELM ST\nWEST SPRINGFIELD MA 01089-2708",
+      "type": "text"
+    },
+    {
+      "id": "45925e75-53ae-4ef9-8404-a70bbbb53e4f",
+      "grounding": {
+        "box": {
+          "bottom": 0.37112945318222046,
+          "left": 0.541077196598053,
+          "right": 0.7897897362709045,
+          "top": 0.31212079524993896
+        },
+        "page": 0
+      },
+      "markdown": "<a id='45925e75-53ae-4ef9-8404-a70bbbb53e4f'></a>\n\nUPS Access Point\u2122\nTHE UPS STORE\n900 RIVERDALE ST\nWEST SPRINGFIELD MA 01089-4904",
+      "type": "text"
+    },
+    {
+      "id": "49fc1322-60f1-43cf-94c4-452e3c6ed73a",
+      "grounding": {
+        "box": {
+          "bottom": 0.44645601511001587,
+          "left": 0.06462930887937546,
+          "right": 0.15601229667663574,
+          "top": 0.42830514907836914
+        },
+        "page": 0
+      },
+      "markdown": "<a id='49fc1322-60f1-43cf-94c4-452e3c6ed73a'></a>\n\nFOLD HERE",
+      "type": "text"
+    },
+    {
+      "id": "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe",
+      "grounding": {
+        "box": {
+          "bottom": 0.8601270914077759,
+          "left": 0.04954403638839722,
+          "right": 0.747211754322052,
+          "top": 0.4788276255130768
+        },
+        "page": 0
+      },
+      "markdown": "<a id='58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe'></a>\n\nEMILY CUSTOMER CARE\nPETER PAN BUS LINES\n55 FRANK B MURRAY ST\nSPRINGFIELD MA 01103\n\nSHIP TO:\nTYLER\n6175120504\nTYLER NORKUS\n142 POPE ST\nLOUISVILLE KY 40206\n\n18 LBS\nDWT: 24,20,20\nAH\n\n1 OF 1\n\n<::visual content::>\n\nKY 402 9-01\n\n<::visual content::>\n\nUPS 2ND DAY AIR\nTRACKING #: 1Z T9R 4G3 02 3454 3429\n\n<::visual content::>\n\n2\n\n<::visual content::>\n\nBILLING: P/P\n\nReference #1: TN\n\n<::visual content::>\nTM\n\nXOL 26.06.01\nNV45 28.0A 07/2026*",
+      "type": "text"
+    },
+    {
+      "id": "fc0fe877-f6bd-4c3e-881f-a4b53727516d",
+      "grounding": {
+        "box": {
+          "bottom": 0.9836751222610474,
+          "left": 0.0342976450920105,
+          "right": 0.10554587841033936,
+          "top": 0.9676903486251831
+        },
+        "page": 0
+      },
+      "markdown": "<a id='fc0fe877-f6bd-4c3e-881f-a4b53727516d'></a>\n\nabout:blank",
+      "type": "marginalia"
+    },
+    {
+      "id": "ad2c086c-7aa9-4014-8a7f-2c5fad48a925",
+      "grounding": {
+        "box": {
+          "bottom": 0.9828389883041382,
+          "left": 0.9398956894874573,
+          "right": 0.965047299861908,
+          "top": 0.9674463272094727
+        },
+        "page": 0
+      },
+      "markdown": "<a id='ad2c086c-7aa9-4014-8a7f-2c5fad48a925'></a>\n\n1/1",
+      "type": "marginalia"
+    }
+  ],
+  "grounding": {
+    "01373155-61e0-4039-8e85-ff5b941cd2c4": {
+      "box": {
+        "bottom": 0.032807283103466034,
+        "left": 0.0340159647166729,
+        "right": 0.13669194281101227,
+        "top": 0.01699422299861908
+      },
+      "page": 0,
+      "type": "chunkMarginalia",
+      "confidence": 0.999,
+      "low_confidence_spans": []
+    },
+    "67e58f72-31b1-4260-8bed-f38de2d6d8fe": {
+      "box": {
+        "bottom": 0.03340869024395943,
+        "left": 0.5211108922958374,
+        "right": 0.6212993860244751,
+        "top": 0.017328277230262756
+      },
+      "page": 0,
+      "type": "chunkMarginalia",
+      "confidence": 0.999,
+      "low_confidence_spans": []
+    },
+    "a7dbca30-62bd-4265-aa78-1a356e26ef99": {
+      "box": {
+        "bottom": 0.06428977847099304,
+        "left": 0.049961306154727936,
+        "right": 0.22720471024513245,
+        "top": 0.04176674038171768
+      },
+      "page": 0,
+      "type": "chunkText",
+      "confidence": 0.995,
+      "low_confidence_spans": []
+    },
+    "bbad6a1d-5c11-4e5b-a862-18d8dd1f2125": {
+      "box": {
+        "bottom": 0.22762277722358704,
+        "left": 0.08293169736862183,
+        "right": 0.7967495918273926,
+        "top": 0.08779575675725937
+      },
+      "page": 0,
+      "type": "chunkText",
+      "confidence": 0.986,
+      "low_confidence_spans": []
+    },
+    "d9b75f40-fc8c-497a-83b9-5f9c8eed49b6": {
+      "box": {
+        "bottom": 0.3073113262653351,
+        "left": 0.09796512126922607,
+        "right": 0.784347653388977,
+        "top": 0.23570187389850616
+      },
+      "page": 0,
+      "type": "chunkText",
+      "confidence": 0.966,
+      "low_confidence_spans": []
+    },
+    "88bebe7c-bfe8-440d-8613-f89cbf87e640": {
+      "box": {
+        "bottom": 0.3716379404067993,
+        "left": 0.048001728951931,
+        "right": 0.2572099268436432,
+        "top": 0.3130054473876953
+      },
+      "page": 0,
+      "type": "chunkText",
+      "confidence": 0.998,
+      "low_confidence_spans": []
+    },
+    "750c923f-c066-43d2-b158-0e3b309a408a": {
+      "box": {
+        "bottom": 0.3711327314376831,
+        "left": 0.29375314712524414,
+        "right": 0.5420671105384827,
+        "top": 0.3120132088661194
+      },
+      "page": 0,
+      "type": "chunkText",
+      "confidence": 0.998,
+      "low_confidence_spans": []
+    },
+    "45925e75-53ae-4ef9-8404-a70bbbb53e4f": {
+      "box": {
+        "bottom": 0.37112945318222046,
+        "left": 0.541077196598053,
+        "right": 0.7897897362709045,
+        "top": 0.31212079524993896
+      },
+      "page": 0,
+      "type": "chunkText",
+      "confidence": 0.993,
+      "low_confidence_spans": []
+    },
+    "49fc1322-60f1-43cf-94c4-452e3c6ed73a": {
+      "box": {
+        "bottom": 0.44645601511001587,
+        "left": 0.06462930887937546,
+        "right": 0.15601229667663574,
+        "top": 0.42830514907836914
+      },
+      "page": 0,
+      "type": "chunkText",
+      "confidence": 1.0,
+      "low_confidence_spans": []
+    },
+    "58ec58d1-8f32-4e05-b1e8-d63eeb5bc5fe": {
+      "box": {
+        "bottom": 0.8601270914077759,
+        "left": 0.04954403638839722,
+        "right": 0.747211754322052,
+        "top": 0.4788276255130768
+      },
+      "page": 0,
+      "type": "chunkText",
+      "confidence": 0.952,
+      "low_confidence_spans": []
+    },
+    "fc0fe877-f6bd-4c3e-881f-a4b53727516d": {
+      "box": {
+        "bottom": 0.9836751222610474,
+        "left": 0.0342976450920105,
+        "right": 0.10554587841033936,
+        "top": 0.9676903486251831
+      },
+      "page": 0,
+      "type": "chunkMarginalia",
+      "confidence": 0.998,
+      "low_confidence_spans": []
+    },
+    "ad2c086c-7aa9-4014-8a7f-2c5fad48a925": {
+      "box": {
+        "bottom": 0.9828389883041382,
+        "left": 0.9398956894874573,
+        "right": 0.965047299861908,
+        "top": 0.9674463272094727
+      },
+      "page": 0,
+      "type": "chunkMarginalia",
+      "confidence": 0.999,
+      "low_confidence_spans": []
+    }
+  }
+}

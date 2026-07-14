@@ -1,0 +1,18 @@
+.git
+.gitignore
+.dockerignore
+.env
+*.env
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+
+# Generated at runtime — not needed in image layers
+parse_results/
+docs/
+
+# Dev / IDE artifacts
+.vscode/
+.idea/
+*.swp

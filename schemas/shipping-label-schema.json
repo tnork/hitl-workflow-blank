@@ -1,0 +1,110 @@
+{
+  "description": "Root object",
+  "type": "object",
+  "properties": {
+    "tracking_number": {
+      "description": "The carrier tracking number printed on the label, exactly as shown. For UPS this typically begins with '1Z'. Strip any surrounding whitespace but preserve internal spacing as printed.",
+      "x-alternativeNames": [
+        "Tracking No",
+        "Tracking #",
+        "1Z Number",
+        "Barcode Number"
+      ],
+      "type": "string"
+    },
+    "carrier": {
+      "description": "The shipping carrier that issued the label, e.g. UPS, FedEx, DHL, USPS.",
+      "x-alternativeNames": [
+        "Shipper",
+        "Courier"
+      ],
+      "type": "string"
+    },
+    "service_level": {
+      "description": "The shipping service or speed printed on the label, e.g. 'UPS Ground', 'Next Day Air', '2nd Day Air'. Return null if not explicitly printed.",
+      "x-alternativeNames": [
+        "Service",
+        "Service Type",
+        "Ship Method"
+      ],
+      "type": "string"
+    },
+    "ship_to_name": {
+      "description": "The recipient's name or company as printed in the SHIP TO block.",
+      "x-alternativeNames": [
+        "Ship To",
+        "Consignee",
+        "Deliver To",
+        "Recipient"
+      ],
+      "type": "string"
+    },
+    "ship_to_address": {
+      "description": "The recipient's full street address including city, state and postal code, as printed in the SHIP TO block. Join multiple lines with a comma and a space.",
+      "x-alternativeNames": [
+        "Delivery Address",
+        "Consignee Address",
+        "Destination"
+      ],
+      "type": "string"
+    },
+    "ship_from_name": {
+      "description": "The sender's name or company as printed in the SHIP FROM or FROM block. Return null if not explicitly printed.",
+      "x-alternativeNames": [
+        "Ship From",
+        "From",
+        "Sender",
+        "Return Address Name"
+      ],
+      "type": "string"
+    },
+    "ship_from_address": {
+      "description": "The sender's full street address including city, state and postal code. Join multiple lines with a comma and a space. Return null if not explicitly printed.",
+      "x-alternativeNames": [
+        "From Address",
+        "Origin",
+        "Return Address"
+      ],
+      "type": "string"
+    },
+    "weight": {
+      "description": "The package weight exactly as printed on the label, including its unit, e.g. '12.5 LBS'. Return null if not explicitly printed.",
+      "x-alternativeNames": [
+        "Wt",
+        "Actual Weight",
+        "Billed Weight"
+      ],
+      "type": "string"
+    },
+    "ship_date": {
+      "description": "The ship date printed on the label, exactly as shown. Return null if not explicitly printed.",
+      "x-alternativeNames": [
+        "Date",
+        "Shipped On"
+      ],
+      "type": "string"
+    },
+    "reference_number": {
+      "description": "The customer reference, purchase order, or invoice number printed on the label. Return null if not explicitly printed.",
+      "x-alternativeNames": [
+        "Reference",
+        "Ref No",
+        "PO Number",
+        "Customer Ref"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "tracking_number",
+    "carrier",
+    "service_level",
+    "ship_to_name",
+    "ship_to_address",
+    "ship_from_name",
+    "ship_from_address",
+    "weight",
+    "ship_date",
+    "reference_number"
+  ]
+}

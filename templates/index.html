@@ -1,0 +1,3100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Human-in-the-loop Approval</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <!-- Vendored locally (static/vendor/) rather than pulled from a CDN: an
+       unpinned CDN script is executable code we do not control, and PDF.js is
+       loaded via dynamic import() which cannot carry an SRI hash. -->
+  <script src="/static/vendor/marked.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* Neutral, unbranded palette. Swap these values to skin the app for a
+         customer — nothing else in the CSS hardcodes a colour. */
+      --brand:      #262626;   /* primary actions, headings */
+      --brand-dark: #0a0a0a;
+      --brand-100:  #e5e5e5;
+      --brand-tint: #f5f5f5;
+      --forest:     #171717;   /* strong text */
+      --gold:       #fde047;   /* search hit highlight (functional, not brand) */
+      --gold-tint:  #fefce8;
+
+      /* Status colours carry meaning (confidence bands, review state) and are
+         intentionally kept — they are not branding. */
+      --success:    #16a34a;  --success-bg: #f0fdf4;
+      --warning:    #d97706;  --warning-bg: #fffbeb;
+      --danger:     #dc2626;  --danger-bg:  #fef2f2;
+
+      --bg:         #ffffff;
+      --bg-mid:     #f5f5f5;
+      --bg-side:    #ededed;
+      --border:     #d4d4d4;
+      --border-s:   #e5e5e5;
+      --head:       #171717;
+      --body:       #404040;
+      --muted:      #737373;
+      --light:      #a3a3a3;
+
+      --r:          12px;
+      --r-lg:       16px;
+      --r-pill:     999px;
+      --sh-sm:      0 2px 8px rgba(0,0,0,.06);
+      --sh-md:      0 8px 24px rgba(0,0,0,.08);
+      --sh-lg:      0 18px 44px rgba(0,0,0,.11);
+      --sh-cta:     0 4px 14px rgba(0,0,0,.18);
+      --focus-ring: 0 0 0 3px rgba(38,38,38,.35);
+      --ease:       cubic-bezier(.22,.61,.36,1);
+    }
+
+    html, body {
+      height: 100%; overflow: hidden;
+      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--body);
+      font-size: 16px;
+    }
+
+    /* One neutral typeface throughout; weight carries the hierarchy. */
+    h1, h2, h3, h4, h5, h6,
+    .rv-eyebrow, .rv-doc-item-pill, button {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    }
+    .rv-eyebrow {
+      font-size: 13px; font-weight: 600; line-height: 1;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--muted);
+    }
+    :focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 6px; }
+
+    .app-wordmark {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+      color: var(--head); white-space: nowrap; margin-left: 2px;
+    }
+
+    /* Error toast — failures used to go to console.error only. */
+    #rv-toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 16px);
+      z-index: 9999; max-width: 560px;
+      padding: 12px 20px; border-radius: var(--r);
+      background: var(--danger-bg); color: #8f2233;
+      border: 1px solid var(--danger);
+      font-family: 'Inter', system-ui, sans-serif; font-size: 14px; font-weight: 600;
+      box-shadow: var(--sh-md);
+      opacity: 0; pointer-events: none;
+      transition: opacity var(--dur, 200ms) var(--ease), transform 200ms var(--ease);
+    }
+    #rv-toast.visible { opacity: 1; transform: translate(-50%, 0); }
+
+    /* ── Background ───────────────────────────────────────────────────────── */
+    .bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    }
+    .bg::before {
+      content: "";
+      position: absolute; top: -300px; right: -200px;
+      width: 800px; height: 800px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(38,38,38,0.07) 0%, transparent 65%);
+      animation: fa 16s ease-in-out infinite alternate;
+    }
+    .bg::after {
+      content: "";
+      position: absolute; bottom: -200px; left: -100px;
+      width: 600px; height: 600px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(38,38,38,0.06) 0%, transparent 65%);
+      animation: fb 20s ease-in-out infinite alternate;
+    }
+    @keyframes fa { 0%{transform:translate(0,0)} 100%{transform:translate(-50px,70px)} }
+    @keyframes fb { 0%{transform:translate(0,0)} 100%{transform:translate(70px,-50px)} }
+    .bg-dots {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image: radial-gradient(circle, rgba(2,114,234,0.09) 1px, transparent 1px);
+      background-size: 30px 30px;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────────── */
+    .layout { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── Header ───────────────────────────────────────────────────────────── */
+    header {
+      position: relative;
+      display: flex; align-items: center;
+      height: 64px; padding: 0 28px;
+      background: rgba(255,255,255,0.96);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border-s);
+      box-shadow: var(--sh-sm);
+      flex-shrink: 0;
+    }
+    .grad-bar {
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #0a1628 0%, var(--success) 50%, #0a1628 100%);
+    }
+
+    .header-left { display: flex; align-items: center; gap: 0; }
+    .h-div { width: 1px; height: 26px; background: var(--border); margin: 0 20px; }
+
+    .help-btn {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--brand); border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: white;
+      flex-shrink: 0; transition: background 0.15s; line-height: 1;
+      font-family: inherit; margin-left: 24px;
+    }
+    .help-btn:hover { background: var(--brand-dark); }
+
+    .header-tagline {
+      font-size: 14px; font-weight: 600; color: var(--head);
+      margin-left: 16px; letter-spacing: -0.2px;
+    }
+
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+    .status-tag {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; color: var(--muted); font-weight: 500;
+    }
+    .s-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--success); box-shadow: 0 0 6px rgba(38,38,38,0.5);
+      animation: pulse 2.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.55;transform:scale(0.8)} }
+
+    /* ── README modal ───────────────────────────────────────────────────────── */
+    .readme-overlay {
+      display: none; position: fixed; inset: 0; z-index: 9500;
+      background: rgba(22,29,34,0.55); backdrop-filter: blur(4px);
+      align-items: center; justify-content: center;
+    }
+    .readme-overlay.open { display: flex; }
+    .readme-modal {
+      background: white; border-radius: 16px; box-shadow: var(--sh-lg);
+      width: min(780px, 92vw); max-height: 82vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .readme-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 24px 14px; border-bottom: 1px solid var(--border-s); flex-shrink: 0;
+    }
+    .readme-title { font-size: 15px; font-weight: 700; color: var(--head); }
+    .readme-close {
+      width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+      background: var(--bg-mid); color: var(--muted); font-size: 18px;
+      display: flex; align-items: center; justify-content: center; transition: background 0.15s;
+    }
+    .readme-close:hover { background: var(--border); }
+    .readme-body {
+      overflow-y: auto; padding: 24px 28px 28px;
+      font-size: 14px; line-height: 1.7; color: var(--body);
+    }
+    .readme-body h1 { font-size: 20px; font-weight: 700; color: var(--head); margin: 0 0 12px; }
+    .readme-body h2 { font-size: 16px; font-weight: 700; color: var(--head); margin: 22px 0 8px; border-bottom: 1px solid var(--border-s); padding-bottom: 5px; }
+    .readme-body h3 { font-size: 14px; font-weight: 700; color: var(--head); margin: 16px 0 6px; }
+    .readme-body p { margin: 0 0 10px; }
+    .readme-body ul, .readme-body ol { padding-left: 20px; margin: 0 0 10px; }
+    .readme-body li { margin-bottom: 4px; }
+    .readme-body code { background: var(--bg-mid); border: 1px solid var(--border-s); border-radius: 4px; padding: 1px 5px; font-size: 12.5px; font-family: monospace; color: var(--forest); }
+    .readme-body pre { background: var(--bg-mid); border: 1px solid var(--border-s); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 0 0 12px; }
+    .readme-body pre code { background: none; border: none; padding: 0; font-size: 12px; color: var(--body); }
+    .readme-body strong { font-weight: 700; color: var(--head); }
+
+    /* ── Main content ─────────────────────────────────────────────────────── */
+    .main-content {
+      flex: 1; display: flex; align-items: flex-start; justify-content: center;
+      padding: 16px 32px 24px;
+      overflow-y: auto;
+    }
+
+    /* ── Welcome ──────────────────────────────────────────────────────────── */
+    .welcome {
+      display: flex; flex-direction: column;
+      align-items: center;
+      gap: 7px; text-align: center;
+      max-width: 960px; width: 100%;
+    }
+    .w-ring {
+      width: 52px; height: 52px; border-radius: 15px;
+      background: var(--brand); position: relative;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: var(--sh-lg);
+    }
+    .w-ring::before {
+      content: "";
+      position: absolute; inset: -5px; border-radius: 22px;
+      background: var(--brand); opacity: 0.12; filter: blur(10px);
+    }
+    .w-ring svg { position: relative; z-index: 1; }
+    .welcome h2 { font-size: 24px; font-weight: 700; color: var(--head); letter-spacing: -0.4px; max-width: 900px; line-height: 1.3; margin: 0; white-space: nowrap; }
+    .welcome p { font-size: 14px; color: var(--muted); max-width: 480px; line-height: 1.7; margin: 0; text-align: center; }
+    .welcome p strong { color: var(--brand); font-weight: 600; }
+
+    /* ── Task board ───────────────────────────────────────────────────────── */
+    .task-board {
+      width: 100%; margin-top: 18px;
+      border-radius: 12px; overflow: hidden;
+      border: 1px solid var(--border); box-shadow: var(--sh-md);
+      background: white;
+    }
+    .task-header {
+      display: grid;
+      grid-template-columns: 8px 1fr 120px;
+      background: var(--bg-mid); border-bottom: 1px solid var(--border);
+    }
+    .task-header > div {
+      padding: 8px 14px; font-size: 11px; font-weight: 700;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px;
+    }
+    .task-header > div:first-child { padding: 0; }
+    .task-row {
+      display: grid;
+      grid-template-columns: 8px 1fr 120px;
+      align-items: center; border-bottom: 1px solid var(--border-s);
+      transition: background 0.12s;
+    }
+    .task-row:last-child { border-bottom: none; }
+    .task-row:hover { background: var(--bg-pale, #fafcff); }
+    .task-color { align-self: stretch; }
+    .task-cell { padding: 13px 14px; font-size: 13px; color: var(--body); }
+    .task-company { font-weight: 700; color: var(--head); font-size: 13px; }
+    .s-badge {
+      display: inline-flex; align-items: center;
+      padding: 3px 11px; border-radius: 20px;
+      font-size: 11.5px; font-weight: 700; letter-spacing: 0.2px;
+    }
+    .s-complete   { background: #e6f9ee; color: #1a7a3f; }
+    .s-review     { background: #fff4e0; color: #9a5f00; }
+    .s-incomplete { background: #fde8e8; color: #b91c1c; }
+
+    /* ── Status summary cards ─────────────────────────────────────────────── */
+    .status-cards {
+      display: flex; gap: 14px; width: 100%; margin-top: 14px;
+    }
+    .status-card {
+      flex: 1; display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px; border-radius: 12px; border: 1.5px solid;
+    }
+    .status-card-left { text-align: left; }
+    .status-card-num {
+      font-size: 28px; font-weight: 800; line-height: 1; margin-bottom: 4px;
+    }
+    .status-card-label { font-size: 13px; font-weight: 500; }
+    .status-card-dot-wrap {
+      width: 46px; height: 46px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .status-card-dot {
+      width: 22px; height: 22px; border-radius: 50%;
+    }
+    .sc-incomplete {
+      background: #fff1f1; border-color: #fca5a5;
+    }
+    .sc-incomplete .status-card-num   { color: #b91c1c; }
+    .sc-incomplete .status-card-label { color: #9b7070; }
+    .sc-incomplete .status-card-dot-wrap { background: rgba(239,68,68,0.12); }
+    .sc-incomplete .status-card-dot      { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.55); animation: pulse 2.5s ease-in-out infinite; }
+    .sc-review {
+      background: #fffbeb; border-color: #fde68a;
+    }
+    .sc-review .status-card-num   { color: #92400e; }
+    .sc-review .status-card-label { color: #9b8a5a; }
+    .sc-review .status-card-dot-wrap { background: rgba(245,158,11,0.12); }
+    .sc-review .status-card-dot      { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.55); animation: pulse 2.5s ease-in-out infinite; animation-delay: 0.8s; }
+    .sc-complete {
+      background: #f0fdf4; border-color: #86efac;
+    }
+    .sc-complete .status-card-num   { color: #15803d; }
+    .sc-complete .status-card-label { color: #5a8c6a; }
+    .sc-complete .status-card-dot-wrap { background: rgba(34,197,94,0.12); }
+    .sc-complete .status-card-dot      { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.55); animation: pulse 2.5s ease-in-out infinite; animation-delay: 1.6s; }
+
+    .status-card { cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; }
+    .status-card:hover { transform: translateY(-2px); box-shadow: var(--sh-md); }
+
+
+    @keyframes row-flash {
+      0%   { background: rgba(38,38,38,0.13); box-shadow: inset 3px 0 0 var(--brand); }
+      60%  { background: rgba(38,38,38,0.06); box-shadow: inset 3px 0 0 var(--brand); }
+      100% { background: transparent; box-shadow: none; }
+    }
+    .task-row-highlight { animation: row-flash 2s ease-out forwards; }
+
+    /* ── Detail view ─────────────────────────────────────────────────────── */
+    #detail-view {
+      display: none; position: fixed; inset: 0; z-index: 8000;
+      flex-direction: column; background: #e8edf2;
+    }
+    #detail-view.open { display: flex; }
+
+    .detail-topbar {
+      display: flex; align-items: center; gap: 16px;
+      height: 52px; padding: 0 20px; flex-shrink: 0;
+      background: #0d1b2a;
+    }
+    .detail-nav { display: flex; align-items: center; gap: 8px; }
+    .detail-nav-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: rgba(255,255,255,0.12); border: none; cursor: pointer;
+      color: white; font-size: 15px; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s; font-family: inherit;
+    }
+    .detail-nav-btn:hover { background: rgba(255,255,255,0.22); }
+    .detail-nav-count { font-size: 13px; color: rgba(255,255,255,0.6); font-weight: 500; min-width: 38px; text-align: center; }
+    .detail-title { flex: 1; text-align: center; font-size: 14px; font-weight: 700; color: white; letter-spacing: 0.1px; }
+    .detail-close {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: rgba(255,255,255,0.12); border: none; cursor: pointer;
+      color: white; font-size: 18px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s; font-family: inherit;
+    }
+    .detail-close:hover { background: rgba(255,255,255,0.22); }
+
+    .detail-body {
+      flex: 1; display: flex; overflow: hidden; gap: 2px; padding: 2px;
+    }
+    .detail-left { width: 52%; display: flex; flex-direction: column; gap: 2px; }
+    .detail-right { flex: 1; display: flex; flex-direction: column; }
+
+    .detail-pane {
+      background: white; display: flex; flex-direction: column;
+      border-radius: 8px; overflow: hidden; box-shadow: var(--sh-sm);
+    }
+    .detail-left .detail-pane { flex: 1; }
+    .detail-right .detail-pane { flex: 1; }
+
+    .pane-label {
+      padding: 9px 16px; font-size: 10.5px; font-weight: 700;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px;
+      border-bottom: 1px solid var(--border-s); background: var(--bg-mid);
+      flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+    }
+    .pane-label-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .pane-body {
+      flex: 1; overflow-y: auto; padding: 24px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* Doc viewer pane C: no padding, column layout */
+    .detail-left .detail-pane {
+      display: flex; flex-direction: column;
+    }
+    .detail-left .pane-body {
+      padding: 0; align-items: stretch; justify-content: flex-start;
+      flex-direction: column; overflow: hidden;
+    }
+    .pane-placeholder { text-align: center; }
+    .pane-placeholder .ph-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 10px; opacity: 0.25;
+    }
+    .pane-placeholder p { font-size: 12.5px; color: var(--light); line-height: 1.5; max-width: 200px; }
+
+    /* clickable task rows */
+    .task-row { cursor: pointer; }
+
+    /* ── Document Viewer (Pane C) ───────────────────────────────────── */
+    .doc-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 12px; border-bottom: 1px solid var(--border-s);
+      background: var(--bg-mid); flex-shrink: 0; gap: 8px;
+    }
+    .doc-tabs { display: flex; gap: 3px; }
+    .doc-tab {
+      padding: 3px 9px; border-radius: 5px; border: 1px solid var(--border);
+      background: white; font-size: 11px; font-weight: 700; color: var(--muted);
+      cursor: pointer; transition: all 0.12s; font-family: inherit; letter-spacing: 0.3px;
+    }
+    .doc-tab:hover { background: var(--brand-tint); border-color: var(--brand); color: var(--brand); }
+    .doc-tab.active { background: var(--brand); border-color: var(--brand); color: white; }
+    .doc-page-nav { display: flex; align-items: center; gap: 5px; }
+    .doc-page-btn {
+      width: 24px; height: 24px; border-radius: 5px;
+      background: white; border: 1px solid var(--border);
+      cursor: pointer; color: var(--muted); font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.12s; font-family: inherit; line-height: 1;
+    }
+    .doc-page-btn:hover { background: var(--brand-tint); border-color: var(--brand); color: var(--brand); }
+    .doc-page-btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+    .doc-page-indicator { font-size: 11.5px; color: var(--muted); font-weight: 600; white-space: nowrap; min-width: 48px; text-align: center; }
+    .doc-image-scroll { flex: 1; overflow: auto; background: #cdd3da; }
+    .doc-image-container { position: relative; margin: 10px; border-radius: 3px; overflow: hidden; box-shadow: 0 2px 10px rgba(22,29,34,0.2); }
+    /* Zoom controls */
+    .doc-zoom-ctrl { display: flex; align-items: center; gap: 3px; }
+    .doc-zoom-btn {
+      width: 24px; height: 24px; border-radius: 5px;
+      background: white; border: 1px solid var(--border);
+      cursor: pointer; color: var(--body); font-size: 14px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.12s; font-family: inherit; line-height: 1;
+    }
+    .doc-zoom-btn:hover { background: var(--brand-tint); border-color: var(--brand); color: var(--brand); }
+    .doc-zoom-btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+    .doc-zoom-reset {
+      padding: 0 8px; height: 24px; border-radius: 5px;
+      background: white; border: 1px solid var(--gold); color: var(--gold);
+      cursor: pointer; font-size: 10.5px; font-weight: 700; letter-spacing: 0.2px;
+      display: flex; align-items: center; transition: all 0.12s; font-family: inherit;
+    }
+    .doc-zoom-reset:hover { background: var(--gold-tint); }
+    .doc-zoom-pct { font-size: 11px; font-weight: 700; color: var(--muted); min-width: 36px; text-align: center; }
+    .doc-image-container img { width: 100%; height: auto; display: block; transition: opacity 0.2s; }
+    .doc-bbox-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .doc-bbox-svg rect { pointer-events: all; cursor: pointer; }
+    .doc-bbox-svg rect:hover { fill: rgba(38,38,38,0.14) !important; }
+    .doc-loading-msg { text-align: center; padding: 48px 16px; font-size: 13px; color: var(--muted); }
+    .doc-complete-state {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px; padding: 40px; text-align: center;
+    }
+    .doc-complete-icon {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: #e6f9ee; display: flex; align-items: center; justify-content: center;
+      font-size: 26px; color: #15803d; margin-bottom: 4px;
+    }
+    /* ── Chunk Detail (Pane B) ───────────────────────────────────────── */
+    .chunk-detail { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .chunk-conf-row { display: flex; align-items: center; gap: 8px; }
+    .chunk-conf-label { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap; }
+    .chunk-conf-track { flex: 1; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+    .chunk-conf-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+    .chunk-conf-value { font-size: 12px; font-weight: 700; min-width: 34px; text-align: right; }
+    .chunk-meta-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+    .chunk-meta-badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 7px; border-radius: 10px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+      background: var(--bg-mid); color: var(--muted); border: 1px solid var(--border-s);
+    }
+    .chunk-md-body { font-size: 12.5px; line-height: 1.65; color: var(--body); overflow-x: auto; }
+    .chunk-md-body table { border-collapse: collapse; width: 100%; font-size: 11px; margin: 6px 0; }
+    .chunk-md-body th, .chunk-md-body td { border: 1px solid var(--border); padding: 3px 6px; }
+    .chunk-md-body th { background: var(--bg-mid); font-weight: 700; }
+    .chunk-md-body p { margin: 0 0 6px; }
+    .chunk-md-body h1,.chunk-md-body h2,.chunk-md-body h3 { font-size: 13px; font-weight: 700; color: var(--head); margin: 8px 0 4px; }
+    .chunk-click-hint { text-align: center; padding: 40px 20px; font-size: 12.5px; color: var(--light); line-height: 1.6; }
+
+    /* ── Mobile responsive ────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      header { height: 52px; padding: 0 12px; }
+      .h-div { margin: 0 10px; }
+      .status-tag { font-size: 12px; }
+      .help-btn { margin-left: 8px; }
+      .welcome h2 { font-size: 19px; letter-spacing: -0.2px; white-space: normal; }
+      .welcome p { font-size: 13px; }
+      .task-board { border-radius: 8px; }
+      .task-header, .task-row { grid-template-columns: 6px 1fr 90px; }
+      .main-content { padding: 12px 14px 20px; }
+      .header-tagline { display: none; }
+      .status-cards { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+      .status-card { min-width: 130px; flex-shrink: 0; padding: 14px 16px; }
+      .status-card-num { font-size: 22px; }
+      /* Review overlay mobile tweaks */
+      #rv-fields-panel { min-width: 100%; }
+      .rv-item-primary { grid-template-columns: 1fr; }
+    }
+
+    /* ══ Review Overlay ════════════════════════════════════════════════════════ */
+    #review-overlay { display:none; position:fixed; inset:0; z-index:8000; flex-direction:column; }
+    #review-overlay.open { display:flex; }
+
+    /* Layout */
+    #rv-app { display:flex; flex-direction:row; height:100%; overflow:hidden; font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif; font-size:14px; background:var(--bg-side); color:var(--body); }
+
+    /* Sidebar */
+    #rv-sidebar { display:flex; flex-direction:column; background:#fff; border-right:1px solid var(--border); overflow:hidden; flex-shrink:0; width:260px; transition:width 0.2s ease; }
+    #rv-sidebar.rv-sidebar-collapsed { width:0; border-right:none; }
+    #rv-sidebar-toggle { margin-left:auto; display:flex; align-items:center; justify-content:center; width:26px; height:26px; border:none; background:var(--bg-side); border-radius:6px; cursor:pointer; color:var(--muted); flex-shrink:0; transition:background .15s,color .15s; }
+    #rv-sidebar-toggle:hover { background:var(--border); color:var(--forest); }
+    #rv-sidebar-show { display:none; align-items:center; justify-content:center; width:28px; height:28px; border:none; background:var(--bg-side); border-radius:6px; cursor:pointer; color:var(--muted); flex-shrink:0; transition:background .15s,color .15s; }
+    #rv-sidebar-show:hover { background:var(--border); color:var(--forest); }
+    #rv-sidebar-header { padding:16px; border-bottom:1px solid var(--border-s); flex-shrink:0; }
+    #rv-sidebar-header h1 { font-size:13px; font-weight:700; color:var(--forest); letter-spacing:.03em; text-transform:uppercase; }
+    #rv-sidebar-header p { font-size:11px; color:var(--muted); margin-top:2px; }
+    #rv-doc-list { flex:1; overflow-y:auto; padding:8px; }
+    #rv-doc-list::-webkit-scrollbar { width:4px; }
+    #rv-doc-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .rv-doc-group-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--light); padding:12px 8px 4px; margin-top:4px; }
+    .rv-doc-item { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px; cursor:pointer; transition:background .15s; border:1px solid transparent; margin-bottom:2px; }
+    .rv-doc-item:hover { background:var(--brand-tint); }
+    .rv-doc-item.active { background:var(--brand-100); border-color:var(--brand); }
+    .rv-doc-item-badge { flex-shrink:0; width:34px; height:22px; border-radius:5px; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; letter-spacing:.03em; }
+    /* doc type badge colors — add .rv-badge-<doc_type> rules for your own types */
+    .rv-badge-default { background:#eff6ff; color:#1d4ed8; }
+    .rv-doc-item-info { flex:1; min-width:0; }
+    .rv-doc-item-id { font-size:12px; font-weight:600; color:var(--forest); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rv-doc-item-sub { font-size:10px; color:var(--muted); margin-top:1px; }
+    .rv-doc-item-pill { flex-shrink:0; font-size:10px; font-weight:600; padding:2px 6px; border-radius:99px; }
+    .rv-pill-full { background:#f0fdf4; color:#16a34a; }
+    .rv-pill-part { background:#fffbeb; color:#d97706; }
+    .rv-pill-miss { background:#fef2f2; color:#dc2626; }
+
+    /* Viewer */
+    #rv-viewer { display:flex; flex-direction:column; overflow:hidden; background:var(--bg-side); position:relative; flex:1; min-width:0; }
+    /* Resize handle */
+    #rv-resize-handle { width:5px; flex-shrink:0; cursor:col-resize; background:rgba(38,38,38,0.18); position:relative; z-index:20; transition:background 0.15s, width 0.12s; }
+    #rv-resize-handle:hover, #rv-resize-handle.rv-dragging { background:rgba(38,38,38,0.45); width:7px; }
+    #rv-viewer-toolbar { display:flex; align-items:center; gap:12px; padding:0 16px; height:48px; background:#fff; border-bottom:1px solid var(--border); flex-shrink:0; }
+    #rv-viewer-toolbar h2 { font-size:13px; font-weight:600; color:var(--forest); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rv-legend { display:flex; align-items:center; gap:12px; flex-shrink:0; }
+    .rv-legend-item { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
+    .rv-legend-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+    .rv-cb-wrap { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); cursor:pointer; user-select:none; }
+    .rv-cb-wrap input { accent-color:var(--brand); width:13px; height:13px; }
+    /* ── Document search ─────────────────────────────────────────────────── */
+    #rv-search {
+      display:flex; align-items:center; gap:4px; flex-shrink:0;
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r-pill); padding:3px 6px 3px 10px;
+      transition:border-color .15s, box-shadow .15s;
+    }
+    #rv-search:focus-within { border-color:var(--brand); box-shadow:var(--focus-ring); }
+    #rv-search-icon { color:var(--muted); flex-shrink:0; }
+    #rv-search-input {
+      border:none; outline:none; background:transparent;
+      font-family:inherit; font-size:13px; color:var(--body);
+      width:170px; padding:3px 2px;
+    }
+    #rv-search-input::placeholder { color:var(--light); }
+    #rv-search-input::-webkit-search-cancel-button { cursor:pointer; }
+    #rv-search-count {
+      font-size:11px; font-weight:600; color:var(--muted);
+      min-width:34px; text-align:center; font-variant-numeric:tabular-nums;
+    }
+    #rv-search-count.rv-no-match { color:var(--danger); }
+    #rv-search button {
+      display:flex; align-items:center; justify-content:center;
+      width:22px; height:22px; border:none; border-radius:50%;
+      background:transparent; color:var(--muted); cursor:pointer;
+      transition:background .15s, color .15s;
+    }
+    #rv-search button:hover:not(:disabled) { background:var(--brand-tint); color:var(--forest); }
+    #rv-search button:disabled { opacity:.35; cursor:default; }
+
+    #rv-pdf-scroll { flex:1; overflow-y:auto; overflow-x:auto; padding:20px; display:flex; flex-direction:column; align-items:center; gap:16px; }
+    #rv-pdf-scroll::-webkit-scrollbar { width:6px; }
+    #rv-pdf-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+    #rv-pdf-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--light); gap:12px; font-size:13px; }
+    #rv-pdf-empty svg { opacity:.4; }
+    .rv-page-wrap { position:relative; box-shadow:0 4px 12px rgba(22,29,34,.10); border-radius:4px; overflow:hidden; background:#fff; flex-shrink:0; }
+    .rv-page-wrap canvas { display:block; }
+    .rv-page-wrap .rv-overlay { position:absolute; inset:0; pointer-events:none; }
+
+    /* Fields panel */
+    #rv-fields-panel { display:flex; flex-direction:column; background:#fff; overflow:hidden; flex-shrink:0; width:320px; }
+    #rv-fields-header { padding:14px 16px; border-bottom:1px solid var(--border-s); flex-shrink:0; }
+    #rv-fields-header h2 { font-size:13px; font-weight:700; color:var(--forest); }
+    #rv-fields-header p { font-size:11px; color:var(--muted); margin-top:2px; }
+    #rv-fields-close { display:none; align-items:center; justify-content:center; width:38px; height:38px; border:none; background:var(--bg-side); border-radius:8px; cursor:pointer; color:var(--muted); transition:background .15s,color .15s; flex-shrink:0; }
+    #rv-fields-close:hover { background:var(--border); color:var(--forest); }
+    #rv-fields-scroll { flex:1; overflow-y:auto; padding:12px; }
+    #rv-fields-scroll::-webkit-scrollbar { width:4px; }
+    #rv-fields-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    #rv-fields-empty { display:flex; align-items:center; justify-content:center; height:100%; color:var(--light); font-size:13px; text-align:center; padding:20px; }
+    .rv-field-card { border:1px solid var(--border-s); border-radius:10px; padding:11px 13px; margin-bottom:8px; cursor:pointer; transition:border-color .15s,box-shadow .15s,background .15s; position:relative; }
+    .rv-field-card:hover { border-color:var(--brand); box-shadow:0 1px 3px rgba(22,29,34,.07); }
+    .rv-field-card.highlighted { border-color:var(--brand); background:var(--brand-tint); box-shadow:0 0 0 2px rgba(38,38,38,.18); }
+    .rv-field-card.pinned { border-color:var(--brand-dark); background:#e0edff; box-shadow:0 0 0 2.5px rgba(0,96,192,.35); }
+    #rv-verified-badge { display:none; align-items:center; gap:6px; margin-top:6px; font-size:11px; font-weight:600; color:#16a34a; }
+    #rv-verified-badge.visible { display:flex; }
+    #rv-verified-badge svg { flex-shrink:0; }
+.rv-field-card.missing { border-style:dashed; border-color:var(--border); }
+    .rv-field-card.user-filled { border-color:#22c55e; background:#f0fdf4; }
+    .rv-field-input { width:100%; margin-top:4px; padding:6px 9px; font-size:13px; font-family:inherit; border:1px solid var(--border); border-radius:7px; outline:none; color:var(--forest); background:#fff; transition:border-color .15s,box-shadow .15s; }
+    .rv-field-input:focus { border-color:var(--brand); box-shadow:0 0 0 2px rgba(38,38,38,.15); }
+    .rv-field-input.has-value { border-color:#22c55e; background:#f0fdf4; }
+    .rv-field-edit { font-weight:500; color:var(--forest); }
+    .rv-field-edit.has-override { border-color:#f59e0b !important; background:#fffbeb !important; }
+    .rv-field-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; display:flex; align-items:center; justify-content:space-between; }
+    .rv-field-approve-btn {
+      width:18px; height:18px; border-radius:50%;
+      border:1.5px solid var(--border); background:white;
+      cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+      flex-shrink:0; transition:all 0.18s; padding:0; color:#c8d0da;
+    }
+    .rv-field-approve-btn:not(:disabled):hover { border-color:#22c55e; color:#22c55e; background:#f0fdf4; }
+    .rv-field-approve-btn.grounded { background:#dcfce7; border-color:#86efac; color:#16a34a; }
+    .rv-field-approve-btn.grounded:not(:disabled):hover { background:#bbf7d0; border-color:#4ade80; color:#15803d; }
+    .rv-field-approve-btn.approved { background:#22c55e; border-color:#22c55e; color:white; }
+    .rv-field-approve-btn:disabled { opacity:0.3; cursor:not-allowed; }
+    .rv-field-value { font-size:13px; font-weight:500; color:var(--forest); word-break:break-word; line-height:1.4; }
+    .rv-field-missing { font-size:12px; color:var(--light); font-style:italic; }
+    .rv-field-status { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+    .rv-status-found { background:#22c55e; }
+    .rv-status-missing { background:#ef4444; }
+    #rv-conf-summary { margin:0 12px 12px; padding:10px 13px; background:#f8fafc; border:1px solid var(--border-s); border-radius:10px; font-size:11px; color:var(--muted); }
+    .rv-field-meta { margin-top:5px; display:flex; align-items:center; gap:6px; }
+    .rv-ground-badge { font-size:10px; font-weight:600; padding:2px 7px; border-radius:99px; letter-spacing:.02em; }
+    .rv-ground-api { background:#eff6ff; color:#1d4ed8; }
+    .rv-ground-fallback { background:#f5f3ff; color:#6d28d9; }
+    .rv-ground-none { background:#fff7ed; color:#c2410c; }
+    #rv-conf-summary b { color:var(--body); }
+
+    /* Verify overlay */
+    /* Sign-off control. Lives inline in the Extracted Fields header, beside the
+       close button — small, and costs the document viewer no vertical space.
+       (It also had no .visible rule at all, so once auto-verify was removed the
+       button could never be reached.) */
+    #rv-verify-overlay { display:none; }
+    #rv-verify-overlay.visible { display:flex; align-items:center; margin-left:auto; }
+    #rv-verify-btn-wrap { display:flex; align-items:center; }
+    #rv-verify-btn {
+      display:flex; align-items:center; gap:6px;
+      height:30px; padding:0 14px;
+      background:var(--brand); color:#fff; border:none; border-radius:var(--r-pill);
+      font-family:'Inter',system-ui,sans-serif; font-size:12px; font-weight:600;
+      letter-spacing:.02em; cursor:pointer; white-space:nowrap;
+      box-shadow:0 3px 10px rgba(38,38,38,.30);
+      transition:background .15s var(--ease), transform .15s var(--ease);
+    }
+    #rv-verify-btn:hover:not(:disabled) { background:var(--brand-dark); transform:translateY(-1px); }
+    #rv-verify-btn:disabled { opacity:.6; cursor:default; }
+    #rv-verify-btn:focus-visible { outline:none; box-shadow:var(--focus-ring); }
+    #rv-verify-btn svg { flex-shrink:0; }
+    #rv-verified-state { display:none; align-items:center; gap:6px; }
+    #rv-verified-state.visible { display:flex; }
+    #rv-verified-check {
+      width:20px; height:20px; border-radius:50%; background:var(--brand);
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    }
+    #rv-verified-label {
+      font-family:'Inter',system-ui,sans-serif;
+      font-size:12px; font-weight:600; color:var(--brand-dark); white-space:nowrap;
+    }
+
+    /* Proceed lightbox */
+    /* ── Verify confirmation dialog ──────────────────────────────────────── */
+    #rv-confirm-backdrop {
+      display:none; position:fixed; inset:0; z-index:10002;
+      background:rgba(22,29,34,.55); backdrop-filter:blur(4px);
+      align-items:center; justify-content:center;
+    }
+    #rv-confirm-backdrop.visible { display:flex; }
+    #rv-confirm-card {
+      background:#fff; border-radius:20px; padding:36px 40px 28px;
+      max-width:430px; width:90%; text-align:center;
+      box-shadow:0 24px 80px rgba(22,29,34,.22);
+      display:flex; flex-direction:column; align-items:center;
+      animation:rv-cardIn .28s cubic-bezier(.34,1.38,.64,1);
+    }
+    #rv-confirm-icon {
+      width:60px; height:60px; border-radius:50%;
+      background:var(--brand); display:flex; align-items:center; justify-content:center;
+      box-shadow:var(--sh-cta); margin-bottom:18px;
+    }
+    #rv-confirm-title {
+      font-family:'Inter',system-ui,sans-serif;
+      font-size:20px; font-weight:600; color:var(--head); margin:0 0 6px;
+    }
+    #rv-confirm-sub { font-size:14px; line-height:1.6; color:var(--muted); margin:0 0 24px; }
+    .rv-confirm-btns { display:flex; gap:10px; width:100%; }
+    .rv-confirm-btns button {
+      flex:1; padding:11px 18px; border-radius:var(--r-pill);
+      font-family:'Inter',system-ui,sans-serif; font-size:14px; font-weight:600;
+      cursor:pointer; transition:background .15s var(--ease), transform .15s var(--ease);
+    }
+    #rv-confirm-no {
+      border:1px solid var(--border); background:var(--bg-mid); color:var(--body);
+    }
+    #rv-confirm-no:hover { background:var(--border-s); }
+    #rv-confirm-yes {
+      border:none; background:var(--brand); color:#fff; box-shadow:var(--sh-cta);
+    }
+    #rv-confirm-yes:hover:not(:disabled) { background:var(--brand-dark); transform:translateY(-1px); }
+    #rv-confirm-yes:disabled { opacity:.6; cursor:default; }
+    .rv-confirm-btns button:focus-visible { outline:none; box-shadow:var(--focus-ring); }
+
+    #rv-proceed-backdrop { display:none; position:fixed; inset:0; background:rgba(5,20,50,.55); backdrop-filter:blur(4px); z-index:10001; align-items:center; justify-content:center; }
+    #rv-proceed-backdrop.visible { display:flex; }
+    #rv-proceed-card { background:#fff; border-radius:20px; padding:44px 48px; max-width:420px; width:90%; box-shadow:0 24px 80px rgba(22,29,34,.22); display:flex; flex-direction:column; align-items:center; animation:rv-cardIn .28s cubic-bezier(.34,1.38,.64,1); }
+    @keyframes rv-cardIn { from{opacity:0;transform:scale(.88) translateY(16px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    #rv-proceed-icon { width:72px; height:72px; border-radius:50%; background:linear-gradient(135deg,#22c55e,#16a34a); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 28px rgba(34,197,94,.38); margin-bottom:20px; }
+    #rv-proceed-count { font-size:26px; font-weight:800; color:var(--forest); letter-spacing:-.01em; margin-bottom:8px; text-align:center; }
+    #rv-proceed-sub { font-size:14px; color:var(--muted); text-align:center; line-height:1.5; margin-bottom:32px; white-space:pre-line; }
+    .rv-proceed-btns { display:flex; gap:12px; width:100%; }
+    .rv-proceed-btn-primary { flex:1; padding:14px 0; background:#22c55e; color:#fff; border:none; border-radius:12px; font-size:15px; font-weight:700; font-family:inherit; cursor:pointer; transition:transform .15s,box-shadow .15s; box-shadow:0 4px 16px rgba(34,197,94,.3); }
+    .rv-proceed-btn-primary:hover { transform:translateY(-1px); box-shadow:0 8px 24px rgba(34,197,94,.4); }
+    .rv-proceed-btn-secondary { flex:1; padding:14px 0; background:transparent; color:var(--muted); border:1.5px solid var(--border); border-radius:12px; font-size:15px; font-weight:600; font-family:inherit; cursor:pointer; transition:background .15s,color .15s; }
+    .rv-proceed-btn-secondary:hover { background:var(--bg-side); color:var(--body); }
+    #rv-proceed-float { display:none; position:fixed; bottom:28px; right:28px; z-index:10002; align-items:center; gap:10px; padding:14px 22px; background:#22c55e; color:#fff; border:none; border-radius:99px; font-size:14px; font-weight:700; font-family:inherit; cursor:pointer; box-shadow:0 6px 24px rgba(34,197,94,.4); transition:transform .15s,box-shadow .15s; animation:rv-floatIn .3s cubic-bezier(.34,1.38,.64,1); }
+    #rv-proceed-float.visible { display:flex; }
+    #rv-proceed-float:hover { transform:translateY(-2px); }
+    @keyframes rv-floatIn { from{opacity:0;transform:translateY(16px) scale(.9)} to{opacity:1;transform:translateY(0) scale(1)} }
+
+    /* ── Field source lightbox ─────────────────────────────────────────── */
+    #rv-src-backdrop { display:none; position:fixed; inset:0; z-index:10010; background:rgba(5,20,50,.5); backdrop-filter:blur(3px); align-items:center; justify-content:center; }
+    #rv-src-backdrop.visible { display:flex; }
+    #rv-src-card { background:#fff; border-radius:16px; width:min(560px,92vw); max-height:78vh; display:flex; flex-direction:column; box-shadow:0 24px 80px rgba(22,29,34,.22); animation:rv-cardIn .22s cubic-bezier(.34,1.38,.64,1); }
+    #rv-src-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px 12px; border-bottom:1px solid var(--border-s); flex-shrink:0; }
+    #rv-src-title { font-size:13px; font-weight:700; color:var(--forest); text-transform:uppercase; letter-spacing:.04em; }
+    #rv-src-close { width:32px; height:32px; border:none; background:var(--bg-side); border-radius:8px; cursor:pointer; color:var(--muted); display:flex; align-items:center; justify-content:center; transition:background .15s,color .15s; flex-shrink:0; }
+    #rv-src-close:hover { background:var(--border); color:var(--forest); }
+    #rv-src-value { margin:12px 20px 0; padding:8px 12px; background:#f0fdf4; border:1px solid #86efac; border-radius:8px; font-size:13px; font-weight:600; color:#15803d; flex-shrink:0; }
+    #rv-src-value span { font-weight:400; color:var(--muted); font-size:11px; margin-right:6px; text-transform:uppercase; letter-spacing:.04em; }
+    #rv-src-body { flex:1; overflow-y:auto; padding:16px 20px 20px; font-size:13px; line-height:1.7; color:var(--body); }
+    #rv-src-body mark { background:#fef9c3; color:#92400e; border-radius:3px; padding:1px 2px; font-weight:600; }
+    #rv-src-body table { border-collapse:collapse; width:100%; font-size:12px; margin:6px 0; }
+    #rv-src-body th, #rv-src-body td { border:1px solid var(--border); padding:4px 8px; }
+    #rv-src-body th { background:#f8fafc; font-weight:700; }
+    #rv-src-body p { margin:0 0 8px; }
+    #rv-src-body pre { background:#f8fafc; border:1px solid var(--border-s); border-radius:6px; padding:10px 12px; overflow-x:auto; font-size:12px; }
+
+    /* ── Array field ─────────────────────────────────────────────────────── */
+    .rv-array-summary { display:flex; align-items:center; gap:7px; cursor:pointer; padding:5px 0 2px; user-select:none; }
+    .rv-array-summary:hover .rv-array-count { color:var(--brand); }
+    .rv-array-count { font-size:13px; font-weight:600; color:var(--forest); }
+    .rv-array-chevron { transition:transform 0.2s; flex-shrink:0; color:var(--muted); }
+    .rv-array-body { margin-top:6px; display:flex; flex-direction:column; gap:6px; max-height:480px; overflow-y:auto; padding-right:2px; }
+    .rv-array-body::-webkit-scrollbar { width:4px; }
+    .rv-array-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .rv-array-item { border:1px solid var(--border-s); border-radius:8px; overflow:hidden; background:#fafcff; flex-shrink:0; }
+    .rv-array-item:hover { border-color:var(--border); }
+    .rv-item-header { display:flex; align-items:center; gap:7px; padding:6px 10px 4px; border-bottom:1px solid var(--bg-side); }
+    .rv-item-num { width:18px; height:18px; border-radius:50%; background:#e0edff; color:#1d4ed8; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .rv-item-primary { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:8px 10px; }
+    .rv-item-field { min-width:0; }
+    .rv-item-lbl { font-size:9px; font-weight:700; color:var(--light); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+    .rv-item-inp { width:100%; padding:3px 6px; font-size:11.5px; border:1px solid var(--border); border-radius:5px; font-family:inherit; color:var(--forest); background:white; outline:none; transition:border-color .12s; box-sizing:border-box; cursor:pointer; }
+    .rv-item-inp:focus { border-color:var(--brand); box-shadow:0 0 0 2px rgba(38,38,38,.12); }
+    .rv-item-inp.rv-sub-pinned { border-color:var(--brand-dark); box-shadow:0 0 0 2px rgba(0,96,192,.18); background:#f0f6ff; }
+
+    /* ── Bounding-box fade animation ──────────────────────────────────────── */
+    @keyframes rv-bbox-in {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes rv-bbox-out {
+      from { opacity: 1; }
+      to   { opacity: 0; }
+    }
+    /* Image viewer */
+    .rv-page-wrap img { width: 100%; height: auto; display: block; }
+    /* TXT viewer */
+    .rv-txt-pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.65; color: var(--body); font-family: 'Courier New', monospace; margin: 0; padding: 24px; }
+    /* Magnifier lens */
+    #rv-magnifier {
+      display: none;
+      position: fixed;
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      border: 2.5px solid var(--brand);
+      box-shadow: 0 0 0 5px rgba(255,255,255,0.85), 0 8px 28px rgba(22,29,34,0.28);
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 9990;
+      background: #fff;
+      transform: translateZ(0);
+    }
+    #rv-magnifier canvas { display: block; }
+
+    /* ── Accessibility ────────────────────────────────────────────────────────── */
+    *:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    [role="button"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+    }
+
+    #rv-magnifier-cross {
+      position: absolute; inset: 0; pointer-events: none;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #rv-magnifier-cross::before, #rv-magnifier-cross::after {
+      content: '';
+      position: absolute;
+      background: rgba(38,38,38,0.45);
+    }
+    #rv-magnifier-cross::before { width: 1px; height: 14px; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+    #rv-magnifier-cross::after  { width: 14px; height: 1px; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+  </style>
+</head>
+<body>
+<div id="rv-magnifier"><canvas id="rv-magnifier-canvas" width="200" height="200"></canvas><div id="rv-magnifier-cross"></div></div>
+
+<div class="bg"></div>
+<div class="bg-dots"></div>
+
+<div class="layout">
+  <!-- Header -->
+  <header>
+    <div class="grad-bar"></div>
+    <div class="header-left">
+      <button id="app-menu-btn" title="Menu" aria-label="Open menu" aria-expanded="false" aria-controls="app-drawer" style="width:34px;height:34px;border-radius:8px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--head);margin-right:8px;flex-shrink:0;" onclick="openAppDrawer()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <img src="/static/logo-mark.png" alt="" role="presentation" style="height:28px;width:28px;display:block;">
+      <span class="app-wordmark">Document Review</span>
+      <button class="help-btn" onclick="openReadme()" title="About this app">?</button>
+      <span class="header-tagline">Human-in-the-loop (HITL) Approval with Agentic Document Extraction</span>
+    </div>
+    <div style="flex:1"></div>
+    <div class="header-right" style="display:flex;align-items:center;gap:12px;">
+      <span id="app-user-display" style="font-size:13px;color:var(--muted);font-weight:500;"></span>
+      <button id="app-logout-btn" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg-mid);color:var(--body);font-size:13px;cursor:pointer;font-family:inherit;" onclick="appLogout()">Logout</button>
+    </div>
+
+  </header>
+
+  <!-- Main content -->
+  <div class="main-content">
+    <div class="welcome">
+<div class="status-cards">
+        <div class="status-card sc-incomplete" id="card-incomplete" onclick="jumpToStatus('incomplete')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')jumpToStatus('incomplete')" aria-label="Incomplete documents">
+          <div class="status-card-left">
+            <div class="status-card-num">2</div>
+            <div class="status-card-label">Incomplete</div>
+          </div>
+          <div class="status-card-dot-wrap"><div class="status-card-dot"></div></div>
+        </div>
+        <div class="status-card sc-review" id="card-review" onclick="jumpToStatus('review')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')jumpToStatus('review')" aria-label="Documents in review">
+          <div class="status-card-left">
+            <div class="status-card-num">2</div>
+            <div class="status-card-label">In Review</div>
+          </div>
+          <div class="status-card-dot-wrap"><div class="status-card-dot"></div></div>
+        </div>
+        <div class="status-card sc-complete" id="card-complete" onclick="jumpToStatus('complete')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')jumpToStatus('complete')" aria-label="Complete documents">
+          <div class="status-card-left">
+            <div class="status-card-num">2</div>
+            <div class="status-card-label">Complete</div>
+          </div>
+          <div class="status-card-dot-wrap"><div class="status-card-dot"></div></div>
+        </div>
+      </div>
+      <div class="task-board">
+        <!-- Header -->
+        <div class="task-header">
+          <div></div>
+          <div>Entity</div>
+          <div>Status</div>
+        </div>
+        <div id="task-board-rows">
+          <div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">Loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /.layout -->
+
+<!-- Review Overlay (replaces old detail-view) -->
+<div id="review-overlay">
+  <div id="rv-app">
+    <!-- Sidebar (collapsed by default) -->
+    <aside id="rv-sidebar" class="rv-sidebar-collapsed">
+      <div id="rv-sidebar-header">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0">
+          <h1 id="rv-sidebar-title" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></h1>
+          <button id="rv-sidebar-toggle" title="Collapse panel">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+        </div>
+        <p id="rv-doc-count">Loading documents…</p>
+      </div>
+      <div id="rv-doc-list"></div>
+    </aside>
+
+    <!-- PDF Viewer -->
+    <main id="rv-viewer">
+      <div id="rv-viewer-toolbar">
+        <button id="rv-sidebar-show" title="Show document list" style="display:flex">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <h2 id="rv-viewer-title">Select a document</h2>
+        <div id="rv-search" role="search">
+          <svg id="rv-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="rv-search-input" type="search" placeholder="Search document…"
+                 autocomplete="off" spellcheck="false" aria-label="Search the document text">
+          <span id="rv-search-count" aria-live="polite"></span>
+          <button id="rv-search-prev" type="button" title="Previous match (Shift+Enter)" aria-label="Previous match" disabled>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+          <button id="rv-search-next" type="button" title="Next match (Enter)" aria-label="Next match" disabled>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <label class="rv-cb-wrap"><input type="checkbox" id="rv-cb-all-boxes" checked> All chunks</label>
+        <label class="rv-cb-wrap"><input type="checkbox" id="rv-cb-field-boxes" checked> Field boxes</label>
+        <div class="rv-legend">
+          <span class="rv-legend-item"><span class="rv-legend-dot" style="background:#22c55e;border:1px solid #16a34a"></span>High ≥ 0.95</span>
+          <span class="rv-legend-item"><span class="rv-legend-dot" style="background:#f59e0b;border:1px solid #d97706"></span>Mid ≥ 0.85</span>
+          <span class="rv-legend-item"><span class="rv-legend-dot" style="background:#ef4444;border:1px solid #dc2626"></span>Low &lt; 0.85</span>
+          <span class="rv-legend-item"><span class="rv-legend-dot" style="background:var(--brand);border:2px solid var(--brand-dark)"></span>Field ref</span>
+          <span class="rv-legend-item"><span class="rv-legend-dot" style="background:#7c3aed;border:2px solid #6d28d9"></span>Text match</span>
+        </div>
+      </div>
+      <div id="rv-pdf-scroll">
+        <div id="rv-pdf-empty">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>
+          <span>Select a document to begin review</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Resize handle -->
+    <div id="rv-resize-handle"></div>
+
+    <!-- Fields panel -->
+    <aside id="rv-fields-panel">
+      <div id="rv-fields-header">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <h2>Extracted Fields</h2>
+          <!-- Sign-off lives here, inline with the close button. It used to be a
+               large block above the document viewer, which stole vertical space
+               from the page you are actually trying to read. -->
+          <div id="rv-verify-overlay" aria-hidden="true">
+            <div id="rv-verify-btn-wrap">
+              <button id="rv-verify-btn" onclick="rvOnVerify()" title="All fields complete — confirm and sign off">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Verify
+              </button>
+            </div>
+            <div id="rv-verified-state">
+              <span id="rv-verified-check">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              <span id="rv-verified-label">Verified</span>
+            </div>
+          </div>
+          <button id="rv-fields-close" title="Close review" onclick="rvCloseDocument()" style="display:none">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <p id="rv-fields-subtitle">—</p>
+<div id="rv-verified-badge">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="rv-verified-badge-text">Verified</span>
+        </div>
+      </div>
+      <div id="rv-conf-summary" style="display:none"></div>
+      <div id="rv-fields-scroll">
+        <div id="rv-fields-empty">Select a document to see extracted fields</div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- Proceed lightbox -->
+<!-- Verify confirmation — fires once every field on a document is green -->
+<div id="rv-confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="rv-confirm-title">
+  <div id="rv-confirm-card">
+    <div id="rv-confirm-icon">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <h2 id="rv-confirm-title">All fields approved</h2>
+    <p id="rv-confirm-sub"></p>
+    <div class="rv-confirm-btns">
+      <button type="button" id="rv-confirm-no">Not yet</button>
+      <button type="button" id="rv-confirm-yes">Verify document</button>
+    </div>
+  </div>
+</div>
+
+<div id="rv-proceed-backdrop">
+  <div id="rv-proceed-card">
+    <div id="rv-proceed-icon">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div id="rv-proceed-count"></div>
+    <div id="rv-proceed-sub"></div>
+    <div class="rv-proceed-btns">
+      <button class="rv-proceed-btn-secondary" onclick="rvOnProceedDashboard()">Return to Dashboard</button>
+      <button class="rv-proceed-btn-primary" id="rv-btn-next-customer" onclick="rvOnProceedNext()">Next Verification</button>
+    </div>
+  </div>
+</div>
+<button id="rv-proceed-float" onclick="rvOnProceedFloat()">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+  <span id="rv-proceed-float-label">All docs verified</span>
+</button>
+<!-- Field source lightbox -->
+<div id="rv-src-backdrop" onclick="if(event.target===this)closeFieldLightbox()">
+  <div id="rv-src-card">
+    <div id="rv-src-header">
+      <span id="rv-src-title"></span>
+      <button id="rv-src-close" onclick="closeFieldLightbox()" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="rv-src-value"></div>
+    <div id="rv-src-body"></div>
+  </div>
+</div>
+
+<!-- README Modal -->
+<div class="readme-overlay" id="readme-overlay" onclick="closeReadme()">
+  <div class="readme-modal" onclick="event.stopPropagation()">
+    <div class="readme-header">
+      <span class="readme-title">About Human-in-the-loop Approval</span>
+      <button class="readme-close" onclick="closeReadme()" aria-label="Close">&times;</button>
+    </div>
+    <div class="readme-body" id="readme-body">Loading…</div>
+  </div>
+</div>
+
+<script>
+  // ── README modal ───────────────────────────────────────────────────────────
+  let _readmeLoaded = false;
+  function openReadme() {
+    document.getElementById("readme-overlay").classList.add("open");
+    if (_readmeLoaded) return;
+    fetch("/readme", { credentials: "same-origin" })
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(md => {
+      const parsed = marked.parse(md);
+      // marked output is trusted (served from local filesystem, not user input)
+      document.getElementById("readme-body").innerHTML = parsed;
+      _readmeLoaded = true;
+    }).catch(() => {
+      document.getElementById("readme-body").textContent = "Could not load README.";
+    });
+  }
+  function closeReadme() { document.getElementById("readme-overlay").classList.remove("open"); }
+
+  // ── Status card jump ──────────────────────────────────────────────────────
+  function jumpToStatus(type) {
+    const badgeClass = { incomplete: 's-incomplete', review: 's-review', complete: 's-complete' }[type];
+    const row = Array.from(document.querySelectorAll('.task-row'))
+      .find(r => r.querySelector('.' + badgeClass));
+    if (!row) return;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.remove('task-row-highlight');
+    void row.offsetWidth; // reflow to restart animation
+    row.classList.add('task-row-highlight');
+    row.addEventListener('animationend', () => row.classList.remove('task-row-highlight'), { once: true });
+  }
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      closeReadme();
+      if (document.getElementById("review-overlay").classList.contains("open")) {
+        if (window.rvCloseDocument) window.rvCloseDocument();
+      }
+    }
+  });
+
+</script>
+
+<!-- App globals injected by Flask -->
+<script>
+  window.__APP_USER__ = { username: {{ username|tojson }}, role: {{ user_role|tojson }} };
+  window.__SCHEMA__ = { doc_types: {{ doc_types|tojson }} };
+  window.__CSRF_TOKEN__ = {{ csrf_token|tojson }};
+</script>
+
+<!-- Error surface: live region so failures are announced, not swallowed. -->
+<div id="rv-toast" role="status" aria-live="polite"></div>
+
+<!-- PDF.js + Review logic -->
+<script type="module">
+import * as pdfjsLib from '/static/vendor/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/vendor/pdf.worker.min.mjs';
+
+// ── Shared request helper ──────────────────────────────────────────────────
+// Every call goes through here. Previously each fetch() called r.json() without
+// checking status, so a 401/409/500 was parsed as if it were data — a failed
+// save looked exactly like a successful one.
+//
+// Throws ApiError on any non-2xx. Redirects to /login on 401.
+class ApiError extends Error {
+  constructor(status, payload) {
+    super((payload && payload.error) || `Request failed (${status})`);
+    this.status = status;
+    this.payload = payload || {};
+  }
+}
+
+async function apiFetch(url, options = {}) {
+  const opts = { credentials: 'same-origin', ...options, headers: { ...(options.headers || {}) } };
+  const method = (opts.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    opts.headers['X-CSRF-Token'] = window.__CSRF_TOKEN__;
+  }
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (e) {
+    throw new ApiError(0, { error: 'Network error — check your connection.' });
+  }
+  if (res.status === 401) {
+    window.location.href = '/login?error=session_expired';
+    throw new ApiError(401, { error: 'Session expired' });
+  }
+  const isJson = (res.headers.get('content-type') || '').includes('application/json');
+  const payload = isJson ? await res.json().catch(() => ({})) : null;
+  if (!res.ok) throw new ApiError(res.status, payload);
+  return payload;
+}
+
+function apiPost(url, body) {
+  return apiFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+/** Surface an error to the user instead of failing silently in the console. */
+function showError(msg) {
+  const el = document.getElementById('rv-toast');
+  if (!el) { alert(msg); return; }
+  el.textContent = msg;
+  el.classList.add('visible');
+  clearTimeout(showError._t);
+  showError._t = setTimeout(() => el.classList.remove('visible'), 6000);
+}
+
+// The settings/users code lives in a separate classic <script>, so it cannot
+// import from this module. Expose the helpers there too — one request path.
+window.showError = showError;
+window.apiFetch  = apiFetch;
+window.apiPost   = apiPost;
+
+// ── State ──────────────────────────────────────────────────────────────────
+let reviewPrefix      = null;
+let reviewClientName  = null;
+// reviewer identity — populated from the logged-in user's session
+let reviewReviewer    = (window.__APP_USER__ && window.__APP_USER__.username) || null;
+let currentDoc        = null;
+let highlightedField  = null;
+let refBoxIndex       = {};
+let userInputs        = {};
+let verifiedStems     = new Set();
+let pinnedField       = null;
+let fieldApprovals    = {};
+let groundedFields    = new Set();
+let hoverTimer        = null;
+let _loadingKey       = null; // race condition guard: tracks which stem is loading
+
+// ── DOM refs ───────────────────────────────────────────────────────────────
+const docList      = document.getElementById('rv-doc-list');
+const docCount     = document.getElementById('rv-doc-count');
+const viewerTitle  = document.getElementById('rv-viewer-title');
+const pdfScroll    = document.getElementById('rv-pdf-scroll');
+const pdfEmpty     = document.getElementById('rv-pdf-empty');
+const fieldsScroll = document.getElementById('rv-fields-scroll');
+const fieldsEmpty  = document.getElementById('rv-fields-empty');
+const fieldsSub    = document.getElementById('rv-fields-subtitle');
+const confSummary  = document.getElementById('rv-conf-summary');
+const cbAllBoxes   = document.getElementById('rv-cb-all-boxes');
+const cbFieldBoxes = document.getElementById('rv-cb-field-boxes');
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function confColor(conf) {
+  if (conf == null) return '#94a3b8';
+  if (conf >= 0.95) return '#22c55e';
+  if (conf >= 0.85) return '#f59e0b';
+  return '#ef4444';
+}
+
+// ── Load doc list ──────────────────────────────────────────────────────────
+async function loadDocList() {
+  verifiedStems.clear();
+  document.getElementById('rv-sidebar-title').textContent = reviewClientName || '';
+  let allDocs;
+  try {
+    allDocs = await apiFetch('/api/docs');
+  } catch (e) {
+    showError(e.message || 'Could not load documents.');
+    return;
+  }
+  const docs = allDocs.filter(d => d.stem.startsWith(reviewPrefix + '_'));
+  docCount.textContent = `${docs.length} documents`;
+
+  // Group by doc_type dynamically (no hardcoded type names)
+  const typeMap = {};
+  for (const d of docs) {
+    if (!typeMap[d.doc_type]) typeMap[d.doc_type] = [];
+    typeMap[d.doc_type].push(d);
+  }
+  docList.innerHTML = '';
+  for (const [dt, items] of Object.entries(typeMap)) {
+    if (!items.length) continue;
+    const lbl = document.createElement('div');
+    lbl.className = 'rv-doc-group-label';
+    lbl.textContent = items[0].label || dt;   // label comes from server (schema.DOC_TYPES)
+    docList.appendChild(lbl);
+    for (const d of items) {
+      const div = document.createElement('div');
+      div.className = 'rv-doc-item';
+      div.dataset.stem = d.stem;
+      const ratio = d.grounded / d.total;
+      const pillClass = ratio === 1 ? 'rv-pill-full' : ratio >= 0.5 ? 'rv-pill-part' : 'rv-pill-miss';
+      const abbr = dt.slice(0, 3).toUpperCase();
+      div.innerHTML = `
+        <span class="rv-doc-item-badge rv-badge-${dt} rv-badge-default">${escapeHtml(abbr)}</span>
+        <div class="rv-doc-item-info">
+          <div class="rv-doc-item-id">${escapeHtml(d.group_id || d.stem)}</div>
+          <div class="rv-doc-item-sub">${escapeHtml(d.stem)}</div>
+        </div>
+        <span class="rv-doc-item-pill ${pillClass}">${d.grounded}/${d.total}</span>`;
+      if (d.verified) verifiedStems.add(d.stem);
+      div.setAttribute('role', 'button');
+      div.setAttribute('tabindex', '0');
+      div.setAttribute('aria-label', `Open ${d.group_id || d.stem}`);
+      div.addEventListener('click', () => selectDoc(d.stem, div));
+      div.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectDoc(d.stem, div); } });
+      docList.appendChild(div);
+    }
+  }
+
+  const firstItem = docList.querySelector('.rv-doc-item');
+  if (firstItem) selectDoc(firstItem.dataset.stem, firstItem);
+}
+
+// ── Select & render doc ────────────────────────────────────────────────────
+async function selectDoc(stem, el) {
+  const loadKey = stem + '_' + Date.now();
+  _loadingKey = loadKey;
+
+  document.querySelectorAll('.rv-doc-item.active').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  viewerTitle.textContent = 'Loading…';
+  fieldsEmpty.style.display = '';
+  fieldsScroll.querySelectorAll('.rv-field-card').forEach(e => e.remove());
+  confSummary.style.display = 'none';
+  pdfScroll.innerHTML = '';
+  pdfEmpty.style.display = '';
+  pdfScroll.appendChild(pdfEmpty);
+  highlightedField = null;
+  pinnedField = null;
+  userInputs = {};
+  fieldApprovals = {};
+  groundedFields = new Set();
+  resetSearch();   // hits from the previous document must not carry over
+  verifyPromptedStem = null;
+  closeVerifyConfirm();
+  document.querySelectorAll('.rv-item-inp.rv-sub-pinned').forEach(x => x.classList.remove('rv-sub-pinned'));
+  document.getElementById('rv-verify-overlay').classList.remove('visible');
+  document.getElementById('rv-verify-overlay').setAttribute('aria-hidden', 'true');
+  document.getElementById('rv-verified-state').classList.remove('visible');
+  document.getElementById('rv-verify-btn-wrap').style.display = '';
+
+  let data;
+  try {
+    data = await apiFetch(`/api/doc/${stem}`);
+  } catch (e) {
+    if (_loadingKey !== loadKey) return; // stale load, a newer one is already rendering
+    viewerTitle.textContent = 'Failed to load document';
+    fieldsEmpty.textContent = `Error: ${e.message}`;
+    fieldsEmpty.style.display = '';
+    return;
+  }
+  if (_loadingKey !== loadKey) return; // user clicked a different doc while this was loading
+  currentDoc  = data;
+  refBoxIndex = data.ref_boxes || {};
+  for (const [fk, fb] of Object.entries(data.field_fallback || {})) {
+    if (fb.ref_id && fb.box && fb.box.left !== undefined) {
+      refBoxIndex[`__fallback__${fk}`] = fb;
+    }
+  }
+
+  // Pre-populate userInputs from saved review state
+  for (const [k, v] of Object.entries((data.review || {}).field_overrides || {})) {
+    if (v !== null && v !== undefined && String(v).trim()) userInputs[k] = String(v);
+  }
+  if (data.review && data.review.verified) {
+    verifiedStems.add(stem);
+    for (const key of Object.keys(data.field_labels || {})) fieldApprovals[key] = true;
+  }
+
+  viewerTitle.textContent = `${data.label} — ${stem}`;
+  document.getElementById('rv-fields-close').style.display = 'flex';
+
+  renderFields(data);
+  await renderDoc(data);
+}
+
+// ── Fields panel ───────────────────────────────────────────────────────────
+function renderFields(data) {
+  fieldsEmpty.style.display = 'none';
+  fieldsScroll.querySelectorAll('.rv-field-card').forEach(e => e.remove());
+  fieldsSub.textContent = data.label;
+
+  const cs = data.confidence_summary || {};
+  if (cs.total_chunks_scored > 0) {
+    confSummary.style.display = '';
+    const lc = cs.low_confidence_chunk_count || 0;
+    confSummary.innerHTML =
+      `Avg parse confidence: <b>${cs.avg_parse_confidence ?? '—'}</b> · ` +
+      `${cs.total_chunks_scored} chunks scored · ` +
+      `<b style="color:${lc > 0 ? '#d97706' : '#16a34a'}">${lc} low-confidence</b>`;
+  }
+
+  const labels     = data.field_labels   || {};
+  const fields     = data.fields         || {};
+  const referenced = data.referenced     || {};
+  const fallback   = data.field_fallback || {};
+
+  for (const [key, label] of Object.entries(labels)) {
+    const val  = fields[key];
+    const refs = referenced[key] || [];
+    const fb   = fallback[key];
+
+    const displayVal = val !== null && val !== undefined
+      ? (Array.isArray(val)
+          ? `${val.length} item${val.length !== 1 ? 's' : ''}`
+          : typeof val === 'number' ? val.toLocaleString() : String(val))
+      : null;
+
+    const hasApiGrounding      = refs.some(id => refBoxIndex[id]);
+    const hasFallbackGrounding = !!fb && !!(refBoxIndex[`__fallback__${key}`]);
+
+    let groundingBadge = '';
+    if (!displayVal) {
+      groundingBadge = '';
+    } else if (hasApiGrounding) {
+      groundingBadge = `<span class="rv-ground-badge rv-ground-api">Grounded</span>`;
+    } else if (hasFallbackGrounding) {
+      groundingBadge = `<span class="rv-ground-badge rv-ground-fallback">Text match</span>`;
+    } else {
+      groundingBadge = `<span class="rv-ground-badge rv-ground-none">Unverified</span>`;
+    }
+
+    const card = document.createElement('div');
+    if (!displayVal) {
+      // ── Missing field: user must fill in ──────────────────────────────────
+      const missingPreApproved = !!fieldApprovals[key];
+      const missingHasVal = !!(userInputs[key] || '');
+      card.className = 'rv-field-card missing';
+      card.innerHTML = `
+        <div class="rv-field-label">
+          <span>${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:center;gap:5px">
+            <button class="rv-field-approve-btn${missingPreApproved ? ' approved' : ''}" data-approve-key="${key}" title="Approve this field"${!missingHasVal && !missingPreApproved ? ' disabled' : ''}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <span class="rv-field-status ${missingPreApproved ? 'rv-status-found' : 'rv-status-missing'}" data-field-dot></span>
+          </div>
+        </div>
+        <input class="rv-field-input" placeholder="Enter value…" data-key="${key}">
+        <div class="rv-field-meta"><span class="rv-ground-badge ${missingPreApproved ? 'rv-ground-api' : 'rv-ground-none'}" data-field-badge>${missingPreApproved ? 'Verified' : 'Unverified'}</span></div>`;
+      const inp = card.querySelector('input');
+      inp.value = userInputs[key] || '';
+      if (inp.value) { inp.classList.add('has-value'); card.classList.add('user-filled'); }
+      const missingApproveBtn = card.querySelector('.rv-field-approve-btn');
+      if (missingApproveBtn) {
+        missingApproveBtn.addEventListener('click', e => { e.stopPropagation(); rvApproveField(key, missingApproveBtn); });
+      }
+      inp.addEventListener('input', e => {
+        userInputs[key] = e.target.value;
+        const hasVal = !!e.target.value;
+        inp.classList.toggle('has-value', hasVal);
+        card.classList.toggle('user-filled', hasVal);
+        if (missingApproveBtn) {
+          missingApproveBtn.disabled = !hasVal;
+          if (!hasVal) {
+            delete fieldApprovals[key];
+            missingApproveBtn.classList.remove('approved');
+            const dot = card.querySelector('[data-field-dot]');
+            const badge = card.querySelector('[data-field-badge]');
+            if (dot) { dot.classList.replace('rv-status-found', 'rv-status-missing'); }
+            if (badge) { badge.className = 'rv-ground-badge rv-ground-none'; badge.textContent = 'Unverified'; }
+          }
+        }
+        checkAllComplete();
+      });
+    } else if (Array.isArray(val)) {
+      // ── Array field: expandable list of items ─────────────────────────────
+      const savedItems = Array.isArray(userInputs[key]) ? userInputs[key].map(x => ({...x})) : val.map(x => ({...x}));
+      const approveClass = fieldApprovals[key] ? ' approved' : '';
+      const dotClass = fieldApprovals[key] ? 'rv-status-found' : 'rv-status-missing';
+      const badgeHtml = hasApiGrounding
+        ? `<span class="rv-ground-badge rv-ground-api" data-field-badge>Grounded</span>`
+        : hasFallbackGrounding
+        ? `<span class="rv-ground-badge rv-ground-fallback" data-field-badge>Text match</span>`
+        : `<span class="rv-ground-badge rv-ground-none" data-field-badge>Unverified</span>`;
+      card.className = 'rv-field-card rv-array-card';
+      card.innerHTML = `
+        <div class="rv-field-label">
+          <span>${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:center;gap:5px">
+            <button class="rv-field-approve-btn${approveClass}" data-approve-key="${key}" title="Approve this field">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <span class="rv-field-status ${dotClass}" data-field-dot></span>
+          </div>
+        </div>
+        <div class="rv-array-summary" role="button" tabindex="0" aria-expanded="false" aria-label="Toggle items list">
+          <span class="rv-array-count">${savedItems.length} item${savedItems.length !== 1 ? 's' : ''}</span>
+          <svg class="rv-array-chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="rv-array-body" style="display:none"></div>
+        <div class="rv-field-meta">${badgeHtml}</div>`;
+      const approveBtn = card.querySelector('.rv-field-approve-btn');
+      if (approveBtn) approveBtn.addEventListener('click', e => { e.stopPropagation(); rvApproveField(key, approveBtn); });
+      const summary = card.querySelector('.rv-array-summary');
+      const body    = card.querySelector('.rv-array-body');
+      const chevron = card.querySelector('.rv-array-chevron');
+      let itemsRendered = false;
+      const fmtLbl = s => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const KEY_ORDER = ['drawing_position', 'spare_part_title', 'part_name', 'part_number', 'working_qty', 'description', 'dimensions', 'material'];
+      function buildItems() {
+        body.innerHTML = '';
+        savedItems.forEach((item, idx) => {
+          const allKeys = [...KEY_ORDER.filter(k => k in item), ...Object.keys(item).filter(k => !KEY_ORDER.includes(k))];
+          const mkInp = (k, v) => `<div class="rv-item-field"><div class="rv-item-lbl">${escapeHtml(fmtLbl(k))}</div><input class="rv-item-inp" data-ii="${idx}" data-ik="${escapeHtml(k)}" value="${escapeHtml(v == null ? '' : String(v))}"></div>`;
+          const div = document.createElement('div');
+          div.className = 'rv-array-item';
+          div.innerHTML = `
+            <div class="rv-item-header"><span class="rv-item-num">${idx + 1}</span></div>
+            <div class="rv-item-primary">${allKeys.map(k => mkInp(k, item[k])).join('')}</div>`;
+          div.querySelectorAll('.rv-item-inp').forEach(inp => {
+            inp.addEventListener('input', () => {
+              savedItems[parseInt(inp.dataset.ii)][inp.dataset.ik] = inp.value;
+              userInputs[key] = savedItems;
+              card.classList.add('user-filled');
+              checkAllComplete();
+            });
+            inp.addEventListener('click', e => {
+              e.stopPropagation();
+              const compositeKey = `${key}__${inp.dataset.ii}__${inp.dataset.ik}`;
+              const refs = (currentDoc?.referenced || {})[compositeKey] || [];
+              if (!refs.some(id => refBoxIndex[id])) return;
+              if (pinnedField === compositeKey) {
+                pinnedField = null;
+                highlightedField = null;
+                inp.classList.remove('rv-sub-pinned');
+              } else {
+                document.querySelectorAll('.rv-item-inp.rv-sub-pinned').forEach(x => x.classList.remove('rv-sub-pinned'));
+                document.querySelectorAll('.rv-field-card.pinned').forEach(c => c.classList.remove('pinned', 'highlighted'));
+                pinnedField = compositeKey;
+                highlightedField = compositeKey;
+                inp.classList.add('rv-sub-pinned');
+              }
+              redrawOverlays();
+              if (pinnedField === compositeKey) scrollToFieldBox(compositeKey);
+            });
+          });
+          body.appendChild(div);
+        });
+        itemsRendered = true;
+      }
+      // Auto-expand immediately
+      body.style.display = '';
+      chevron.style.transform = 'rotate(180deg)';
+      summary.setAttribute('aria-expanded', 'true');
+      buildItems();
+      function toggleArrayBody(e) {
+        e.stopPropagation();
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        chevron.style.transform = open ? '' : 'rotate(180deg)';
+        summary.setAttribute('aria-expanded', String(!open));
+        if (!open && !itemsRendered) buildItems();
+      }
+      summary.addEventListener('click', toggleArrayBody);
+      summary.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleArrayBody(e); } });
+      card.addEventListener('mouseenter', () => {
+        clearTimeout(hoverTimer);
+        if (pinnedField === key) return;
+        hoverTimer = setTimeout(() => {
+          highlightedField = key;
+          redrawOverlays();
+          card.classList.add('highlighted');
+          if (hasApiGrounding || hasFallbackGrounding) scrollToFieldBox(key);
+        }, 700);
+      });
+      card.addEventListener('mouseleave', () => {
+        clearTimeout(hoverTimer);
+        hoverTimer = null;
+        if (pinnedField !== key) {
+          card.classList.remove('highlighted');
+          highlightedField = pinnedField;
+          redrawOverlays();
+        }
+      });
+      card.addEventListener('click', e => {
+        if (e.target.tagName === 'INPUT' || e.target.closest('.rv-array-summary')) return;
+        clearTimeout(hoverTimer);
+        hoverTimer = null;
+        if (pinnedField === key) {
+          pinnedField = null;
+          card.classList.remove('pinned');
+          card.classList.remove('highlighted');
+          highlightedField = null;
+          redrawOverlays();
+        } else {
+          document.querySelectorAll('.rv-field-card.pinned').forEach(c => {
+            c.classList.remove('pinned');
+            c.classList.remove('highlighted');
+          });
+          pinnedField = key;
+          card.classList.add('pinned');
+          card.classList.remove('highlighted');
+          highlightedField = key;
+          redrawOverlays();
+          if (hasApiGrounding || hasFallbackGrounding) scrollToFieldBox(key);
+        }
+      });
+
+    } else {
+      // ── Extracted field: editable, with override tracking ─────────────────
+      const savedVal   = userInputs[key] !== undefined ? String(userInputs[key]) : displayVal;
+      const isModified = userInputs[key] !== undefined;
+      const isGrounded = hasApiGrounding || hasFallbackGrounding;
+      const isAlreadyVerified = verifiedStems.has(currentDoc?.stem);
+
+      // Use server-provided field_high_conf (computed against the per-doc-type threshold)
+      const isHighConf = !!(data.field_high_conf || {})[key];
+
+      // Pre-approve grounded + high-confidence fields (unless doc already fully verified)
+      if (isGrounded && isHighConf && !isAlreadyVerified) {
+        groundedFields.add(key);
+        fieldApprovals[key] = true;
+      }
+
+      // Determine initial button class
+      let approveClass = '';
+      if (fieldApprovals[key]) {
+        approveClass = isAlreadyVerified ? ' approved' : (isGrounded ? ' grounded' : ' approved');
+      }
+
+      // Green dot: extracted + grounded + ≥0.95 confidence (or manually approved)
+      // Red dot: missing, ungrounded, or low-confidence extraction
+      const dotClass = fieldApprovals[key] ? 'rv-status-found' : 'rv-status-missing';
+      // Add data-field-badge to ungrounded badge so rvApproveField can update it
+      const badgeHtml = (!displayVal) ? '' :
+        hasApiGrounding ? `<span class="rv-ground-badge rv-ground-api" data-field-badge>Grounded</span>` :
+        hasFallbackGrounding ? `<span class="rv-ground-badge rv-ground-fallback" data-field-badge>Text match</span>` :
+        `<span class="rv-ground-badge rv-ground-none" data-field-badge>Unverified</span>`;
+
+      card.className = 'rv-field-card';
+      card.innerHTML = `
+        <div class="rv-field-label">
+          <span>${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:center;gap:5px">
+            <button class="rv-field-approve-btn${approveClass}" data-approve-key="${key}" title="Approve this field">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <span class="rv-field-status ${dotClass}" data-field-dot></span>
+          </div>
+        </div>
+        <input class="rv-field-input rv-field-edit${isModified ? ' has-override' : ''}" data-key="${key}" data-original="">
+        <div class="rv-field-meta">${badgeHtml}${isModified ? '<span class="rv-ground-badge override-badge" style="background:#fff7ed;color:#c2410c;margin-left:4px">Modified</span>' : ''}</div>`;
+      const approveBtn = card.querySelector('.rv-field-approve-btn');
+      if (approveBtn) {
+        approveBtn.addEventListener('click', e => { e.stopPropagation(); rvApproveField(key, approveBtn); });
+      }
+      const inp = card.querySelector('input');
+      inp.dataset.original = displayVal;
+      inp.value = savedVal;
+      inp.addEventListener('input', e => {
+        const newVal = e.target.value;
+        if (newVal !== e.target.dataset.original) {
+          userInputs[key] = newVal;
+          inp.classList.add('has-override');
+          if (!card.querySelector('.override-badge')) {
+            card.querySelector('.rv-field-meta').insertAdjacentHTML('beforeend',
+              '<span class="rv-ground-badge override-badge" style="background:#fff7ed;color:#c2410c;margin-left:4px">Modified</span>');
+          }
+        } else {
+          delete userInputs[key];
+          inp.classList.remove('has-override');
+          card.querySelector('.override-badge')?.remove();
+        }
+        checkAllComplete();
+      });
+      card.addEventListener('mouseenter', () => {
+        clearTimeout(hoverTimer);
+        if (pinnedField === key) return;
+        hoverTimer = setTimeout(() => {
+          highlightedField = key;
+          redrawOverlays();
+          card.classList.add('highlighted');
+          if (hasApiGrounding || hasFallbackGrounding) scrollToFieldBox(key);
+        }, 700);
+      });
+      card.addEventListener('mouseleave', () => {
+        clearTimeout(hoverTimer);
+        hoverTimer = null;
+        if (pinnedField !== key) {
+          card.classList.remove('highlighted');
+          highlightedField = pinnedField;
+          redrawOverlays();
+        }
+      });
+      card.addEventListener('click', e => {
+        if (e.target.tagName === 'INPUT') return;
+        clearTimeout(hoverTimer);
+        hoverTimer = null;
+        if (pinnedField === key) {
+          pinnedField = null;
+          card.classList.remove('pinned');
+          card.classList.remove('highlighted');
+          highlightedField = null;
+          redrawOverlays();
+        } else {
+          document.querySelectorAll('.rv-field-card.pinned').forEach(c => {
+            c.classList.remove('pinned');
+            c.classList.remove('highlighted');
+          });
+          pinnedField = key;
+          card.classList.add('pinned');
+          card.classList.remove('highlighted');
+          highlightedField = key;
+          redrawOverlays();
+          if (hasApiGrounding || hasFallbackGrounding) scrollToFieldBox(key);
+        }
+      });
+    }
+    fieldsScroll.appendChild(card);
+  }
+  checkAllComplete();
+  updateVerifyAffordance();
+}
+
+// ── Per-field approval ────────────────────────────────────────────────────
+function rvApproveField(key, btn) {
+  if (btn.disabled) return;
+  if (btn.classList.contains('grounded')) {
+    // Upgrade AI-grounded to manually confirmed
+    btn.classList.remove('grounded');
+    btn.classList.add('approved');
+    fieldApprovals[key] = true;
+    btn.title = 'Approved (click to undo)';
+  } else if (btn.classList.contains('approved')) {
+    if (groundedFields.has(key)) {
+      // Cycle back to grounded (still approved)
+      btn.classList.remove('approved');
+      btn.classList.add('grounded');
+      fieldApprovals[key] = true;
+      btn.title = 'AI-grounded (click to confirm)';
+    } else {
+      // Unapprove non-grounded field
+      btn.classList.remove('approved');
+      fieldApprovals[key] = false;
+      btn.title = 'Approve this field';
+    }
+  } else {
+    // Approve from gray
+    btn.classList.add('approved');
+    fieldApprovals[key] = true;
+    btn.title = 'Approved (click to undo)';
+  }
+
+  // Update status dot and badge in the card
+  const card = btn.closest('.rv-field-card');
+  if (card) {
+    const dot = card.querySelector('[data-field-dot]');
+    const badge = card.querySelector('[data-field-badge]');
+    if (dot) {
+      dot.classList.toggle('rv-status-found', !!fieldApprovals[key]);
+      dot.classList.toggle('rv-status-missing', !fieldApprovals[key]);
+    }
+    if (badge && (badge.textContent === 'Unverified' || badge.textContent === 'Verified')) {
+      if (fieldApprovals[key]) {
+        badge.className = 'rv-ground-badge rv-ground-api';
+        badge.textContent = 'Verified';
+      } else {
+        badge.className = 'rv-ground-badge rv-ground-none';
+        badge.textContent = 'Unverified';
+      }
+    }
+  }
+
+  updateVerifyAffordance();
+}
+
+/** True when every field on the current doc is green (grounded or approved). */
+function allFieldsGreen() {
+  if (!currentDoc) return false;
+  const keys = Object.keys(currentDoc.field_labels || {});
+  return keys.length > 0 && keys.every(k => fieldApprovals[k]);
+}
+
+/**
+ * Reflect completeness in the UI. This NEVER saves anything.
+ *
+ * The app used to fire POST /api/review automatically the moment the last field
+ * went green — signing off and moving the file with no human action. Now a
+ * complete document simply reports itself as finished and offers a Verify
+ * button; a person decides.
+ */
+function updateVerifyAffordance() {
+  if (!currentDoc) return;
+  const stem       = currentDoc.stem;
+  const btnWrap    = document.getElementById('rv-verify-btn-wrap');
+  const verifiedEl = document.getElementById('rv-verified-state');
+  const overlay    = document.getElementById('rv-verify-overlay');
+  const alreadyVerified = verifiedStems.has(stem) || !!(currentDoc.review || {}).verified;
+
+  if (alreadyVerified) {
+    if (btnWrap) btnWrap.style.display = 'none';
+    if (verifiedEl) verifiedEl.classList.add('visible');
+    if (overlay) { overlay.classList.add('visible'); overlay.setAttribute('aria-hidden', 'false'); }
+    setDocItemFinished(stem, true);
+    return;
+  }
+
+  if (verifiedEl) verifiedEl.classList.remove('visible');
+  const green = allFieldsGreen();
+  if (btnWrap) btnWrap.style.display = green ? '' : 'none';
+  // Show the sign-off panel only once the document is actually complete.
+  if (overlay) {
+    overlay.classList.toggle('visible', green);
+    overlay.setAttribute('aria-hidden', green ? 'false' : 'true');
+  }
+  setDocItemFinished(stem, false, green);
+
+  if (green) {
+    // Ask once, the moment the last field turns green — unless the reviewer has
+    // already declined this document.
+    if (verifyPromptedStem !== stem && !verifyDeclined.has(stem)) {
+      verifyPromptedStem = stem;
+      openVerifyConfirm();
+    }
+  } else {
+    // A field was un-approved: withdraw the prompt and re-arm it, so completing
+    // the document again does ask.
+    if (verifyPromptedStem === stem) verifyPromptedStem = null;
+    verifyDeclined.delete(stem);
+    closeVerifyConfirm();
+  }
+}
+
+// ── Verify confirmation dialog ─────────────────────────────────────────────
+// Nothing is ever signed off without an explicit human answer. The dialog is the
+// "yes/no" gate that replaced the old silent auto-verify.
+let verifyPromptedStem = null;
+// Documents the reviewer explicitly said "Not yet" to. Persist for the session so
+// re-opening a document does not nag them again; un-approving a field clears it.
+const verifyDeclined    = new Set();
+let _confirmLastFocus   = null;
+
+function openVerifyConfirm() {
+  const back = document.getElementById('rv-confirm-backdrop');
+  if (!back || !currentDoc) return;
+  const n = Object.keys(currentDoc.field_labels || {}).length;
+  document.getElementById('rv-confirm-sub').textContent =
+    `All ${n} fields on this document are approved. Verify it and move it to the outbox?`;
+  _confirmLastFocus = document.activeElement;
+  back.classList.add('visible');
+  document.getElementById('rv-confirm-yes').focus();
+}
+
+function closeVerifyConfirm() {
+  const back = document.getElementById('rv-confirm-backdrop');
+  if (!back || !back.classList.contains('visible')) return;
+  back.classList.remove('visible');
+  if (_confirmLastFocus && document.contains(_confirmLastFocus)) _confirmLastFocus.focus();
+}
+
+(function initVerifyConfirm() {
+  const back = document.getElementById('rv-confirm-backdrop');
+  const yes  = document.getElementById('rv-confirm-yes');
+  const no   = document.getElementById('rv-confirm-no');
+  if (!back) return;
+
+  yes.addEventListener('click', async () => {
+    yes.disabled = true;
+    try { await rvOnVerify(); } finally { yes.disabled = false; }
+    closeVerifyConfirm();
+  });
+  // "Not yet" leaves the document unverified. The Verify button stays on screen,
+  // so the reviewer can still sign off whenever they are ready.
+  no.addEventListener('click', () => {
+    if (currentDoc) verifyDeclined.add(currentDoc.stem);
+    closeVerifyConfirm();
+  });
+  back.addEventListener('click', (e) => { if (e.target === back) closeVerifyConfirm(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && back.classList.contains('visible')) closeVerifyConfirm();
+  });
+})();
+
+/** Mark the sidebar row: finished (extraction complete) vs verified (signed off). */
+function setDocItemFinished(stem, verified, finished = false) {
+  const item = document.querySelector(`.rv-doc-item[data-stem="${stem}"]`);
+  if (!item) return;
+  item.classList.toggle('rv-doc-verified', !!verified);
+  item.classList.toggle('rv-doc-finished', !verified && !!finished);
+  const pill = item.querySelector('.rv-doc-item-pill');
+  if (pill && (verified || finished)) {
+    const total = Object.keys(currentDoc?.field_labels || {}).length;
+    pill.className = 'rv-doc-item-pill rv-pill-full';
+    pill.textContent = verified ? 'Verified' : `${total}/${total}`;
+  }
+}
+
+// ── Verify overlay ────────────────────────────────────────────────────────
+function checkAllComplete() {
+  if (!currentDoc) return;
+  const labels = currentDoc.field_labels || {};
+  const review = currentDoc.review       || {};
+  const stem   = currentDoc.stem;
+
+  const badge = document.getElementById('rv-verified-badge');
+  const badgeText = document.getElementById('rv-verified-badge-text');
+
+  if (review.verified || verifiedStems.has(stem)) {
+    badge.classList.add('visible');
+    const when = review.verified_at ? new Date(review.verified_at).toLocaleString() : '';
+    badgeText.textContent = when ? `Verified · ${when}` : 'Verified';
+  } else {
+    badge.classList.remove('visible');
+  }
+}
+
+/**
+ * Sign off the current document. Only ever called from an explicit click.
+ *
+ * The server independently recomputes which fields still need a human approval
+ * and rejects the request (409) if any is missing, so this payload is a claim to
+ * be checked, not an instruction to be obeyed. Reviewer identity and the
+ * timestamp are assigned server-side from the session — we no longer send them.
+ */
+async function rvOnVerify() {
+  const doc  = currentDoc;          // pin the document this call is about
+  const stem = doc?.stem;
+  if (!stem) return;
+  if (doc.review?.verified || verifiedStems.has(stem)) return;   // already signed off
+
+  const btn = document.getElementById('rv-verify-btn');
+  if (btn) { btn.disabled = true; btn.classList.add('busy'); }
+
+  // Build field_overrides from all userInputs
+  const fieldOverrides = {};
+  for (const [key, val] of Object.entries(userInputs)) {
+    if (Array.isArray(val)) {
+      if (val.length) fieldOverrides[key] = val;
+    } else {
+      const v = (val !== null && val !== undefined) ? String(val).trim() : '';
+      if (v) fieldOverrides[key] = v;
+    }
+  }
+  // Only the schema's own fields; the server rejects anything else.
+  const approvals = {};
+  for (const key of Object.keys(doc.field_labels || {})) {
+    approvals[key] = !!fieldApprovals[key];
+  }
+
+  try {
+    const res = await apiPost(`/api/review/${stem}`, {
+      verified: true,
+      field_overrides: fieldOverrides,
+      approvals,
+    });
+
+    doc.review = {
+      verified: true,
+      verified_at: res.verified_at,
+      verified_by: res.verified_by,
+      field_overrides: fieldOverrides,
+    };
+    verifiedStems.add(stem);
+
+    if (res.moved === false && res.warning) showError(res.warning);
+
+    // The reviewer may have switched documents while the request was in flight.
+    // Persist the result (above) but never repaint the panel for a document that
+    // is no longer on screen — that used to mark the NEW document as verified.
+    if (currentDoc !== doc) { initTaskBoard(); return; }
+
+    const state = document.getElementById('rv-verified-state');
+    if (state) state.title = `${stem} · verified by ${res.verified_by} · ${new Date(res.verified_at).toLocaleString()}`;
+    updateVerifyAffordance();
+    launchConfetti();
+
+    // Refresh the dashboard sitting behind the overlay so the Incomplete /
+    // In Review / Complete counters and the row's status pill reflect the
+    // sign-off straight away, rather than only after the overlay is closed.
+    initTaskBoard();
+
+    // Only documents actually signed off count. The old code batch-verified
+    // every unopened fully-grounded doc behind the user's back.
+    const allItems    = document.querySelectorAll('.rv-doc-item');
+    const allVerified = allItems.length > 0 &&
+                        [...allItems].every(el => verifiedStems.has(el.dataset.stem));
+    if (allVerified) setTimeout(() => showProceedLightbox(allItems.length, true), 1200);
+
+  } catch (e) {
+    if (e.status === 409 && Array.isArray(e.payload.missing)) {
+      const names = e.payload.missing.map(m => m.label).join(', ');
+      showError(`Cannot verify — these fields still need approval: ${names}`);
+    } else {
+      showError(e.message || 'Could not save the review. Nothing was changed.');
+    }
+    // The document was NOT verified, so leave the UI in its unverified state —
+    // but only if it is still the one on screen.
+    if (currentDoc === doc) updateVerifyAffordance();
+  } finally {
+    if (btn) { btn.disabled = false; btn.classList.remove('busy'); }
+  }
+}
+window.rvOnVerify = rvOnVerify;
+
+function showProceedLightbox(docCount, allVerified) {
+  if (!allVerified) return;
+  document.getElementById('rv-proceed-count').textContent = `All ${docCount} documents verified`;
+  document.getElementById('rv-proceed-sub').textContent =
+    `All documents for ${reviewClientName} have been reviewed.`;
+  // Find next customer task row
+  const rows = Array.from(document.querySelectorAll('.task-row[data-doc-stem]'))
+    .filter(r => r.dataset.docStem);
+  const idx  = rows.findIndex(r => r.dataset.docStem === reviewPrefix);
+  const nextRow = rows[idx + 1] || null;
+  const nextBtn = document.getElementById('rv-btn-next-customer');
+  if (nextBtn) nextBtn.style.display = nextRow ? '' : 'none';
+  document.getElementById('rv-proceed-backdrop').classList.add('visible');
+  document.getElementById('rv-proceed-float').classList.remove('visible');
+}
+
+function rvOnProceedDashboard() {
+  document.getElementById('rv-proceed-backdrop').classList.remove('visible');
+  document.getElementById('rv-proceed-float').classList.remove('visible');
+  closeReview();
+}
+
+function rvOnProceedNext() {
+  // Advance to next customer
+  document.getElementById('rv-proceed-backdrop').classList.remove('visible');
+  document.getElementById('rv-proceed-float').classList.remove('visible');
+  const rows = Array.from(document.querySelectorAll('.task-row[data-doc-stem]'))
+    .filter(r => r.dataset.docStem);
+  const idx  = rows.findIndex(r => r.dataset.docStem === reviewPrefix);
+  const nextRow = rows[idx + 1] || null;
+  if (nextRow) {
+    const nextPrefix = nextRow.dataset.docStem;
+    const nextName   = nextRow.querySelector('.task-company')?.textContent.trim() || '';
+    reviewPrefix     = nextPrefix;
+    reviewClientName = nextName;
+    loadDocList();
+  } else {
+    closeReview();
+  }
+}
+
+function rvOnProceedFloat() {
+  document.getElementById('rv-proceed-float').classList.remove('visible');
+  const allItems = document.querySelectorAll('.rv-doc-item');
+  showProceedLightbox(allItems.length, true);
+}
+
+// ── Close review → back to task board ─────────────────────────────────────
+function rvCloseDocument() {
+  // If all docs verified → close entirely; otherwise just reset viewer
+  closeReview();
+}
+
+function closeReview() {
+  document.getElementById('review-overlay').classList.remove('open');
+  document.getElementById('rv-proceed-backdrop').classList.remove('visible');
+  document.getElementById('rv-proceed-float').classList.remove('visible');
+  currentDoc = null; highlightedField = null; pinnedField = null; refBoxIndex = {}; userInputs = {};
+  fieldApprovals = {}; groundedFields = new Set();
+  verifiedStems.clear();
+  verifyPromptedStem = null;
+  closeVerifyConfirm();
+  viewerTitle.textContent = 'Select a document';
+  Array.from(pdfScroll.children).forEach(c => { if (c !== pdfEmpty) c.remove(); });
+  pdfEmpty.style.display = '';
+  fieldsScroll.querySelectorAll('.rv-field-card').forEach(e => e.remove());
+  fieldsEmpty.style.display = '';
+  fieldsSub.textContent = '—';
+  confSummary.style.display = 'none';
+  document.getElementById('rv-verify-overlay').classList.remove('visible');
+  document.getElementById('rv-verified-state').classList.remove('visible');
+  document.getElementById('rv-verify-btn-wrap').style.display = '';
+  document.getElementById('rv-fields-close').style.display = 'none';
+  document.querySelectorAll('.rv-doc-item.active').forEach(r => r.classList.remove('active'));
+  initTaskBoard();
+}
+
+// ── Document rendering router ──────────────────────────────────────────────
+async function renderDoc(data) {
+  const ext = (data.file_ext || '').toLowerCase();
+  if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) {
+    await renderImage(data);
+  } else if (ext === '.txt') {
+    await renderTxt(data);
+  } else if (ext === '.docx' || ext === '.pptx') {
+    pdfEmpty.style.display = 'none';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'padding:48px;text-align:center;color:var(--muted);font-size:13px;line-height:1.7';
+    msg.innerHTML = `<div style="font-size:32px;margin-bottom:12px">📄</div><div style="font-weight:600;color:var(--head);margin-bottom:6px">${escapeHtml(ext.slice(1).toUpperCase())} Preview</div><div>In-browser preview not available for this file type.</div><a href="/pdf/${escapeHtml(data.stem)}" download style="display:inline-block;margin-top:14px;color:var(--brand);font-weight:600">Download file</a>`;
+    pdfScroll.appendChild(msg);
+  } else {
+    await renderPDF(data);
+  }
+}
+
+async function renderImage(data) {
+  const url = `/pdf/${data.stem}`;
+  pdfEmpty.style.display = 'none';
+  const wrap = document.createElement('div');
+  wrap.className = 'rv-page-wrap';
+  wrap.style.cssText = 'max-width:100%;width:100%;';
+  const img = document.createElement('img');
+  img.alt = data.stem;
+  const overlayDiv = document.createElement('div');
+  overlayDiv.className = 'rv-overlay';
+  overlayDiv.dataset.page = '0';
+  wrap.appendChild(img);
+  wrap.appendChild(overlayDiv);
+  pdfScroll.appendChild(wrap);
+  await new Promise(resolve => {
+    img.onload  = resolve;
+    img.onerror = () => {
+      overlayDiv.innerHTML = '<div style="color:#ef4444;padding:20px;text-align:center">Failed to load image</div>';
+      resolve();
+    };
+    img.src = url;
+  });
+  if (img.naturalWidth) {
+    drawPageOverlay(overlayDiv, 0, img.naturalWidth, img.naturalHeight, data);
+  }
+}
+
+async function renderTxt(data) {
+  const url = `/pdf/${data.stem}`;
+  pdfEmpty.style.display = 'none';
+  const wrap = document.createElement('div');
+  wrap.className = 'rv-page-wrap';
+  wrap.style.cssText = 'max-width:100%;width:100%;background:white;';
+  try {
+    const text = await fetch(url, { credentials: 'same-origin' })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
+    const pre = document.createElement('pre');
+    pre.className = 'rv-txt-pre';
+    pre.textContent = text;
+    wrap.appendChild(pre);
+  } catch {
+    wrap.textContent = 'Failed to load file.';
+  }
+  pdfScroll.appendChild(wrap);
+}
+
+// ── PDF rendering ──────────────────────────────────────────────────────────
+async function renderPDF(data) {
+  const url = `/pdf/${data.stem}`;
+  const pdf = await pdfjsLib.getDocument(url).promise;
+  pdfEmpty.style.display = 'none';
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page     = await pdf.getPage(pageNum);
+    const scale    = 1.5;
+    const viewport = page.getViewport({ scale });
+    const wrap     = document.createElement('div');
+    wrap.className = 'rv-page-wrap';
+    wrap.style.width = viewport.width + 'px';
+    const canvas    = document.createElement('canvas');
+    canvas.width    = viewport.width;
+    canvas.height   = viewport.height;
+    const overlayDiv = document.createElement('div');
+    overlayDiv.className = 'rv-overlay';
+    overlayDiv.dataset.page = pageNum - 1;
+    wrap.appendChild(canvas);
+    wrap.appendChild(overlayDiv);
+    pdfScroll.appendChild(wrap);
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    drawPageOverlay(overlayDiv, pageNum - 1, viewport.width, viewport.height, data);
+  }
+}
+
+function drawPageOverlay(overlayDiv, pageIndex, W, H, data) {
+  overlayDiv.innerHTML = '';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+  overlayDiv.appendChild(svg);
+
+  // Search hits paint first so field/grounding boxes stay legible on top.
+  drawSearchMatches(svg, pageIndex, W, H);
+
+  const showAll   = cbAllBoxes.checked;
+  const showField = cbFieldBoxes.checked;
+  const labels    = data.field_labels || {};
+  const referenced = data.referenced  || {};
+  const fallback  = data.field_fallback || {};
+
+  // Draw all chunk boxes
+  if (showAll) {
+    for (const [id, rb] of Object.entries(refBoxIndex)) {
+      if (id.startsWith('__fallback__')) continue;
+      if (rb.page !== pageIndex) continue;
+      const box  = rb.box;
+      const conf = rb.confidence;
+      const color = confColor(conf);
+      const rect  = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', box.left * W);
+      rect.setAttribute('y', box.top * H);
+      rect.setAttribute('width',  (box.right  - box.left) * W);
+      rect.setAttribute('height', (box.bottom - box.top)  * H);
+      rect.setAttribute('fill', 'none');
+      rect.setAttribute('stroke', color);
+      rect.setAttribute('stroke-width', '1.5');
+      rect.setAttribute('opacity', '0.6');
+      svg.appendChild(rect);
+    }
+  }
+
+  // Draw field reference boxes
+  if (showField) {
+    for (const [key, refs] of Object.entries(referenced)) {
+      const isPinned  = pinnedField === key;
+      const isHovered = highlightedField === key;
+      const isActive  = isPinned || isHovered;
+      const color     = isPinned ? 'var(--brand-dark)' : isHovered ? 'var(--brand)' : 'rgba(38,38,38,0.5)';
+      const fill      = isPinned ? 'rgba(0,96,192,0.15)' : isHovered ? 'rgba(38,38,38,0.12)' : 'none';
+      const sw        = isActive ? 2.5 : 1.5;
+      for (const refId of refs) {
+        const rb = refBoxIndex[refId];
+        if (!rb || rb.page !== pageIndex) continue;
+        const box  = rb.box;
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', box.left * W);
+        rect.setAttribute('y', box.top * H);
+        rect.setAttribute('width',  (box.right  - box.left) * W);
+        rect.setAttribute('height', (box.bottom - box.top)  * H);
+        rect.setAttribute('fill', fill);
+        rect.setAttribute('stroke', color);
+        rect.setAttribute('stroke-width', sw);
+        if (isActive) {
+          rect.classList.add('rv-active-rect');
+          rect.style.animation = 'rv-bbox-in 0.35s ease-out both';
+        }
+        svg.appendChild(rect);
+      }
+      // Fallback boxes
+      const fb = fallback[key];
+      const fbRb = refBoxIndex[`__fallback__${key}`];
+      if (fb && fbRb && fbRb.page === pageIndex) {
+        const box  = fbRb.box;
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', box.left * W);
+        rect.setAttribute('y', box.top * H);
+        rect.setAttribute('width',  (box.right  - box.left) * W);
+        rect.setAttribute('height', (box.bottom - box.top)  * H);
+        rect.setAttribute('fill', isActive ? 'rgba(124,58,237,0.12)' : 'none');
+        rect.setAttribute('stroke', isActive ? '#7c3aed' : 'rgba(124,58,237,0.5)');
+        rect.setAttribute('stroke-width', sw);
+        if (isActive) {
+          rect.classList.add('rv-active-rect');
+          rect.style.animation = 'rv-bbox-in 0.35s ease-out both';
+        }
+        svg.appendChild(rect);
+      }
+    }
+  }
+}
+
+function scrollToFieldBox(key, doFlash = false) {
+  const refs = (currentDoc?.referenced || {})[key] || [];
+  let targetPage = null;
+  let targetBox  = null;
+  for (const refId of refs) {
+    const rb = refBoxIndex[refId];
+    if (rb) { targetPage = rb.page; targetBox = rb.box; break; }
+  }
+  if (targetPage === null) {
+    const fb = refBoxIndex[`__fallback__${key}`];
+    if (fb) { targetPage = fb.page; targetBox = fb.box; }
+  }
+  if (targetPage === null) return;
+
+  const overlay = document.querySelector(`.rv-overlay[data-page="${targetPage}"]`);
+  if (!overlay) return;
+  const wrap   = overlay.parentElement;
+  const docEl  = wrap.querySelector('canvas') || wrap.querySelector('img');
+  if (!docEl) return;
+
+  const docRect     = docEl.getBoundingClientRect();
+  const scrollRect  = pdfScroll.getBoundingClientRect();
+  const wrapTop     = wrap.getBoundingClientRect().top - scrollRect.top + pdfScroll.scrollTop;
+  const dispH       = docRect.height;
+  const boxMidPx    = ((targetBox?.top ?? 0) + (targetBox?.bottom ?? targetBox?.top ?? 0)) / 2 * dispH;
+  const scrollTarget = wrapTop + boxMidPx - pdfScroll.clientHeight / 2;
+  pdfScroll.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
+
+  if (doFlash && targetBox) {
+    setTimeout(() => flashFieldBox(overlay, targetBox, canvas.width, canvas.height), 400);
+  }
+}
+
+// Escape HTML special chars to prevent XSS when injecting external data into innerHTML.
+// Use this for any value sourced from extracted PDF fields or server responses.
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function flashFieldBox(overlay, box, W, H) {
+  if (!box) return;
+  const svg = overlay.querySelector('svg');
+  if (!svg) return;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', box.left * W);
+  rect.setAttribute('y', box.top * H);
+  rect.setAttribute('width',  (box.right  - box.left) * W);
+  rect.setAttribute('height', (box.bottom - box.top)  * H);
+  rect.setAttribute('fill',   'rgba(38,38,38,0.35)');
+  rect.setAttribute('stroke', 'var(--brand)');
+  rect.setAttribute('stroke-width', '3');
+  rect.style.transition = 'opacity 0.7s ease';
+  rect.style.opacity = '1';
+  svg.appendChild(rect);
+  setTimeout(() => { rect.style.opacity = '0'; }, 350);
+  setTimeout(() => { rect.remove(); }, 1100);
+}
+
+function redrawOverlays() {
+  document.querySelectorAll('.rv-overlay').forEach(div => {
+    const pageIndex = parseInt(div.dataset.page);
+    const wrap = div.parentElement;
+    if (!currentDoc) return;
+    const canvas = wrap.querySelector('canvas');
+    const img    = wrap.querySelector('img');
+    if (canvas) {
+      drawPageOverlay(div, pageIndex, canvas.width, canvas.height, currentDoc);
+    } else if (img && img.naturalWidth) {
+      drawPageOverlay(div, pageIndex, img.naturalWidth, img.naturalHeight, currentDoc);
+    }
+  });
+}
+
+// ── Document search ────────────────────────────────────────────────────────
+// Searches the parsed chunk text (currentDoc.chunk_index), which carries a
+// grounding box per chunk. That is what lets a hit be drawn on the page: the
+// rendered PDF is a canvas, so there is no selectable text to search directly.
+//
+// Ceiling: matches are chunk-level, so a hit highlights the whole chunk (a table
+// row, a line) rather than the exact glyph run. Word-level boxes would need a
+// PDF.js text layer.
+let searchMatches = [];      // [{page, box}] in document order
+let searchByPage  = new Map();  // page -> [{m, i}] so a redraw touches only its own page
+let searchIdx     = -1;      // index of the active match
+let searchQuery   = '';
+
+function runSearch(query) {
+  const q = (query || '').trim().toLowerCase();
+  searchQuery = q;
+  searchMatches = [];
+  searchIdx = -1;
+
+  if (q && currentDoc) {
+    for (const c of (currentDoc.chunk_index || [])) {
+      // Only page + box are kept: the chunk text is not used for rendering, and
+      // copying it per match wastes memory on large documents.
+      if ((c.text || '').toLowerCase().includes(q)) {
+        searchMatches.push({ page: c.page, box: c.box });
+      }
+    }
+    // Top-to-bottom, page by page, so Enter walks the document in reading order.
+    searchMatches.sort((a, b) =>
+      (a.page - b.page) || ((a.box?.top ?? 0) - (b.box?.top ?? 0)));
+  }
+  indexMatchesByPage();
+
+  updateSearchUI();
+  if (searchMatches.length) {
+    gotoMatch(0);           // this redraws; do not redraw twice
+  } else {
+    redrawOverlays();       // clear any hits left from the previous query
+  }
+}
+
+function indexMatchesByPage() {
+  searchByPage = new Map();
+  searchMatches.forEach((m, i) => {
+    if (!searchByPage.has(m.page)) searchByPage.set(m.page, []);
+    searchByPage.get(m.page).push({ m, i });
+  });
+}
+
+function gotoMatch(i) {
+  if (!searchMatches.length) return;
+  // Wrap around at both ends.
+  searchIdx = (i + searchMatches.length) % searchMatches.length;
+  updateSearchUI();
+  redrawOverlays();
+  scrollToSearchMatch(searchMatches[searchIdx]);
+}
+
+function scrollToSearchMatch(m) {
+  const overlay = document.querySelector(`.rv-overlay[data-page="${m.page}"]`);
+  if (!overlay) return;
+  const wrap  = overlay.parentElement;
+  const docEl = wrap.querySelector('canvas') || wrap.querySelector('img');
+  if (!docEl) return;
+  const scrollRect = pdfScroll.getBoundingClientRect();
+  const wrapTop    = wrap.getBoundingClientRect().top - scrollRect.top + pdfScroll.scrollTop;
+  const dispH      = docEl.getBoundingClientRect().height;
+  const midPx      = ((m.box?.top ?? 0) + (m.box?.bottom ?? 0)) / 2 * dispH;
+  pdfScroll.scrollTo({
+    top: Math.max(0, wrapTop + midPx - pdfScroll.clientHeight / 2),
+    behavior: 'smooth',
+  });
+}
+
+function updateSearchUI() {
+  const count = document.getElementById('rv-search-count');
+  const prev  = document.getElementById('rv-search-prev');
+  const next  = document.getElementById('rv-search-next');
+  const n = searchMatches.length;
+  if (!searchQuery)      count.textContent = '';
+  else if (n === 0)      count.textContent = '0';
+  else                   count.textContent = `${searchIdx + 1}/${n}`;
+  count.classList.toggle('rv-no-match', !!searchQuery && n === 0);
+  prev.disabled = n === 0;
+  next.disabled = n === 0;
+}
+
+/** Draw search hits for one page. Called from drawPageOverlay. */
+function drawSearchMatches(svg, pageIndex, W, H) {
+  // Look up only this page's hits instead of scanning every match for every
+  // page — that was O(pages x matches) DOM work on each keystroke.
+  const hits = searchByPage.get(pageIndex);
+  if (!hits || !hits.length) return;
+  hits.forEach(({ m, i }) => {
+    const active = i === searchIdx;
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r.setAttribute('x', m.box.left * W);
+    r.setAttribute('y', m.box.top  * H);
+    r.setAttribute('width',  (m.box.right  - m.box.left) * W);
+    r.setAttribute('height', (m.box.bottom - m.box.top)  * H);
+    // Yellow reads as "found" (the browser-find convention) and does not collide
+    // with the colours used for grounding and approval.
+    r.setAttribute('fill',   active ? 'rgba(253,224,71,0.55)' : 'rgba(253,224,71,0.28)');
+    r.setAttribute('stroke', active ? '#a16207' : 'rgba(161,98,7,0.55)');
+    r.setAttribute('stroke-width', active ? '3' : '1.5');
+    r.setAttribute('rx', '2');
+    svg.appendChild(r);
+  });
+}
+
+(function initSearch() {
+  const input = document.getElementById('rv-search-input');
+  const prev  = document.getElementById('rv-search-prev');
+  const next  = document.getElementById('rv-search-next');
+  if (!input) return;
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = input.value.trim().toLowerCase();
+      if (q && q === searchQuery && searchMatches.length) {
+        // Same query again: step to the next hit rather than re-searching.
+        gotoMatch(searchIdx + (e.shiftKey ? -1 : 1));
+      } else {
+        runSearch(input.value);
+      }
+    } else if (e.key === 'Escape') {
+      input.value = '';
+      runSearch('');
+      input.blur();
+    }
+  });
+  // Clicking the native ✕ fires 'search' with an empty value.
+  input.addEventListener('search', () => { if (!input.value) runSearch(''); });
+
+  prev.addEventListener('click', () => gotoMatch(searchIdx - 1));
+  next.addEventListener('click', () => gotoMatch(searchIdx + 1));
+
+  // Cmd/Ctrl+F focuses the document search instead of the browser's, which
+  // could not find canvas-rendered text anyway.
+  document.addEventListener('keydown', (e) => {
+    const open = document.getElementById('review-overlay')?.classList.contains('open');
+    if (open && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      input.focus();
+      input.select();
+    }
+  });
+})();
+
+/** Clear search state when switching documents. */
+function resetSearch() {
+  const input = document.getElementById('rv-search-input');
+  if (input) input.value = '';
+  searchMatches = [];
+  searchByPage = new Map();
+  searchIdx = -1;
+  searchQuery = '';
+  updateSearchUI();
+}
+
+// ── Confetti ───────────────────────────────────────────────────────────────
+function launchConfetti() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:99999';
+  canvas.setAttribute('aria-hidden', 'true');
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  const COLORS = ['#22c55e','var(--brand)','#f59e0b','#a855f7','#ef4444','#06b6d4','#84cc16','#f97316'];
+  const DURATION = 1300;
+  const particles = Array.from({length:160}, () => ({
+    x: Math.random() * canvas.width, y: Math.random() * canvas.height * -0.3 - 10,
+    vx: (Math.random() - 0.5) * 5, vy: Math.random() * 4 + 2,
+    rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.3,
+    w: Math.random() * 8 + 5, h: Math.random() * 4 + 3,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)], opacity: 1,
+  }));
+  const start = performance.now();
+  function frame(now) {
+    const elapsed = now - start, progress = elapsed / DURATION;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.rot += p.vr;
+      p.opacity = Math.max(0, 1 - Math.max(0, progress - 0.6) / 0.4);
+      ctx.save(); ctx.globalAlpha = p.opacity;
+      ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = p.color; ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+      ctx.restore();
+    }
+    if (elapsed < DURATION) requestAnimationFrame(frame); else canvas.remove();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── Checkbox listeners ─────────────────────────────────────────────────────
+cbAllBoxes.addEventListener('change',  redrawOverlays);
+cbFieldBoxes.addEventListener('change', redrawOverlays);
+
+// ── Task board (dynamic) ───────────────────────────────────────────────────
+// To assign reviewer names, set reviewReviewer before calling rvOpenReview,
+// or integrate with your auth system (e.g. reviewReviewer = currentUser.name).
+// The value is included in POST /api/review for audit logging.
+
+async function initTaskBoard() {
+  const rows = document.getElementById('task-board-rows');
+  if (!rows) return;
+  let docs;
+  try {
+    docs = await apiFetch('/api/docs');
+  } catch (e) {
+    rows.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">Could not load documents.</div>';
+    return;
+  }
+  if (!docs.length) {
+    rows.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No documents found. Add PDFs to docs/ and run the extraction pipeline.</div>';
+    updateStatusCards(0, 0, 0);
+    return;
+  }
+
+  // Group documents by group_id (server-computed from schema.GROUP_PREFIX_PARTS)
+  const groups = {};
+  for (const doc of docs) {
+    const gid = doc.group_id || doc.stem;
+    if (!groups[gid]) groups[gid] = { prefix: gid, docs: [], entityName: '' };
+    groups[gid].docs.push(doc);
+    if (!groups[gid].entityName && doc.customer_name) groups[gid].entityName = doc.customer_name;
+  }
+  const statusOrder = { complete: 0, review: 1, incomplete: 2 };
+  const groups_list = Object.values(groups).sort((a, b) => {
+    const statusA = a.docs.every(d => d.verified) ? 'complete' : (a.docs.some(d => d.verified) || !a.docs.some(d => d.found < d.total)) ? 'review' : 'incomplete';
+    const statusB = b.docs.every(d => d.verified) ? 'complete' : (b.docs.some(d => d.verified) || !b.docs.some(d => d.found < d.total)) ? 'review' : 'incomplete';
+    return (statusOrder[statusA] - statusOrder[statusB]) || a.prefix.localeCompare(b.prefix);
+  });
+
+  let nIncomplete = 0, nReview = 0, nComplete = 0;
+  rows.innerHTML = '';
+  groups_list.forEach((group) => {
+    const allVerified = group.docs.every(d => d.verified);
+    const anyVerified = group.docs.some(d => d.verified);
+    const anyMissing  = group.docs.some(d => d.found < d.total);
+    const status = allVerified ? 'complete' : (anyVerified || !anyMissing) ? 'review' : 'incomplete';
+    if (status === 'complete') nComplete++;
+    else if (status === 'incomplete') nIncomplete++;
+    else nReview++;
+
+    const statusColor = { complete: '#22c55e', review: '#f59e0b', incomplete: '#ef4444' }[status];
+    const badgeClass  = { complete: 's-complete', review: 's-review', incomplete: 's-incomplete' }[status];
+    const badgeLabel  = { complete: 'Complete', review: 'In Review', incomplete: 'Incomplete' }[status];
+
+    const displayName = group.entityName
+      ? group.entityName.split(/\s+/).slice(0, 4).join(' ')
+      : group.prefix.toUpperCase();
+
+    const row = document.createElement('div');
+    row.className = 'task-row';
+    row.dataset.status  = status;
+    row.dataset.docStem = group.prefix;
+    row.innerHTML = `
+      <div class="task-color" style="background:${statusColor}"></div>
+      <div class="task-cell task-company">${escapeHtml(displayName)}</div>
+      <div class="task-cell"><span class="s-badge ${badgeClass}">${badgeLabel}</span></div>`;
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-label', `Review ${displayName}`);
+    row.addEventListener('click', () => {
+      if (window.rvOpenReview) window.rvOpenReview(group.prefix, displayName);
+    });
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (window.rvOpenReview) window.rvOpenReview(group.prefix, displayName); } });
+    rows.appendChild(row);
+  });
+  updateStatusCards(nIncomplete, nReview, nComplete);
+}
+
+function updateStatusCards(nIncomplete, nReview, nComplete) {
+  const incEl = document.querySelector('#card-incomplete .status-card-num');
+  const revEl = document.querySelector('#card-review .status-card-num');
+  const comEl = document.querySelector('#card-complete .status-card-num');
+  if (incEl) incEl.textContent = nIncomplete;
+  if (revEl) revEl.textContent = nReview;
+  if (comEl) comEl.textContent = nComplete;
+}
+
+function closeFieldLightbox() {
+  document.getElementById('rv-src-backdrop').classList.remove('visible');
+}
+
+// ── Expose to global scope ─────────────────────────────────────────────────
+window.rvOpenReview = function(prefix, clientName) {
+  reviewPrefix     = prefix;
+  reviewClientName = clientName;
+  document.getElementById('review-overlay').classList.add('open');
+  loadDocList();
+};
+window.rvOnVerify       = rvOnVerify;
+window.rvCloseDocument  = rvCloseDocument;
+window.rvOnProceedDashboard = rvOnProceedDashboard;
+window.rvOnProceedNext      = rvOnProceedNext;
+window.rvOnProceedFloat = rvOnProceedFloat;
+
+// ── Sidebar toggle ─────────────────────────────────────────────────────────
+(function initSidebarToggle() {
+  const sidebar     = document.getElementById('rv-sidebar');
+  const toggleBtn   = document.getElementById('rv-sidebar-toggle');
+  const showBtn     = document.getElementById('rv-sidebar-show');
+  function collapse() {
+    sidebar.classList.add('rv-sidebar-collapsed');
+    showBtn.style.display = 'flex';
+  }
+  function expand() {
+    sidebar.classList.remove('rv-sidebar-collapsed');
+    showBtn.style.display = 'none';
+  }
+  toggleBtn.addEventListener('click', e => { e.stopPropagation(); collapse(); });
+  showBtn.addEventListener('click',   e => { e.stopPropagation(); expand(); });
+})();
+
+// ── Resize handle (fields panel) ───────────────────────────────────────────
+(function initResizeHandle() {
+  const handle      = document.getElementById('rv-resize-handle');
+  const fieldsPanel = document.getElementById('rv-fields-panel');
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const startX  = e.clientX;
+    const startW  = fieldsPanel.offsetWidth;
+    handle.classList.add('rv-dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    function onMove(e2) {
+      const delta = startX - e2.clientX;
+      const newW  = Math.max(240, Math.min(700, startW + delta));
+      fieldsPanel.style.width = newW + 'px';
+    }
+    function onUp() {
+      handle.classList.remove('rv-dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  });
+})();
+
+// ── Magnifier lens ─────────────────────────────────────────────────────────
+(function initMagnifier() {
+  const MAG_SIZE = 200;
+  const MAG_ZOOM = 1.6;  // gentle zoom — shows ~125px of source per side
+  const MAG_R    = MAG_SIZE / 2;
+  const mag    = document.getElementById('rv-magnifier');
+  const magCvs = document.getElementById('rv-magnifier-canvas');
+  const magCtx = magCvs.getContext('2d');
+  let active = false;
+
+  function hide() {
+    if (active) {
+      mag.style.display = 'none';
+      pdfScroll.style.cursor = '';
+      active = false;
+    }
+  }
+
+  function onMove(e) {
+    const pageWrap = e.target && e.target.closest ? e.target.closest('.rv-page-wrap') : null;
+    if (!pageWrap) { hide(); return; }
+
+    const docEl = pageWrap.querySelector('canvas') || pageWrap.querySelector('img');
+    if (!docEl) { hide(); return; }
+
+    const rect = docEl.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    if (relX < 0 || relY < 0 || relX > rect.width || relY > rect.height) { hide(); return; }
+
+    const srcW = docEl.nodeName === 'CANVAS' ? docEl.width  : docEl.naturalWidth;
+    const srcH = docEl.nodeName === 'CANVAS' ? docEl.height : docEl.naturalHeight;
+    if (!srcW || !srcH) { hide(); return; }
+
+    const scaleX = srcW / rect.width;
+    const scaleY = srcH / rect.height;
+
+    // Sample region — allow edges beyond source bounds; drawImage clips naturally
+    const sw = MAG_SIZE / MAG_ZOOM;
+    const sh = MAG_SIZE / MAG_ZOOM;
+    const sx = relX * scaleX - sw / 2;
+    const sy = relY * scaleY - sh / 2;
+
+    // Fill white so areas beyond the document border show as blank
+    magCtx.fillStyle = '#fff';
+    magCtx.fillRect(0, 0, MAG_SIZE, MAG_SIZE);
+    try {
+      magCtx.drawImage(docEl, sx, sy, sw, sh, 0, 0, MAG_SIZE, MAG_SIZE);
+    } catch (_) { hide(); return; }
+
+    // Center the lens on the cursor
+    const mx = e.clientX - MAG_R;
+    const my = e.clientY - MAG_R;
+
+    mag.style.left    = mx + 'px';
+    mag.style.top     = my + 'px';
+    mag.style.display = 'block';
+    pdfScroll.style.cursor = 'none';
+    active = true;
+  }
+
+  pdfScroll.addEventListener('mousemove', onMove);
+  pdfScroll.addEventListener('mouseleave', hide);
+})();
+
+// ── Init ───────────────────────────────────────────────────────────────────
+// Expose escapeHtml globally so non-module scripts can use it
+window.escapeHtml = escapeHtml;
+initTaskBoard();
+</script>
+
+<!-- App Drawer -->
+<div id="app-drawer-overlay" onclick="closeAppDrawer()" style="display:none;position:fixed;inset:0;background:rgba(22,29,34,0.35);z-index:9100;backdrop-filter:blur(2px);transition:opacity 0.2s;"></div>
+<div id="app-drawer" style="position:fixed;top:0;left:-260px;width:240px;height:100%;background:var(--bg);z-index:9101;box-shadow:var(--sh-lg);display:flex;flex-direction:column;transition:left 0.22s ease;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 16px 14px;border-bottom:1px solid var(--border-s);">
+    <span style="font-weight:600;font-size:15px;color:var(--head)">Menu</span>
+    <button onclick="closeAppDrawer()" style="width:28px;height:28px;border-radius:6px;border:none;background:var(--bg-mid);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div style="padding:8px;">
+    <div id="drawer-admin-items" style="display:none;">
+      <button onclick="openSettingsOverlay()" style="width:100%;text-align:left;padding:10px 12px;border-radius:var(--r);border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--body);font-family:inherit;display:flex;align-items:center;gap:10px;" onmouseover="this.style.background='var(--bg-mid)'" onmouseout="this.style.background='transparent'">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+      <button onclick="openUsersOverlay()" style="width:100%;text-align:left;padding:10px 12px;border-radius:var(--r);border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--body);font-family:inherit;display:flex;align-items:center;gap:10px;" onmouseover="this.style.background='var(--bg-mid)'" onmouseout="this.style.background='transparent'">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Users
+      </button>
+    </div>
+    <div style="margin-top:4px;border-top:1px solid var(--border-s);padding-top:8px;">
+      <button onclick="openChangePasswordModal()" style="width:100%;text-align:left;padding:10px 12px;border-radius:var(--r);border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--body);font-family:inherit;display:flex;align-items:center;gap:10px;" onmouseover="this.style.background='var(--bg-mid)'" onmouseout="this.style.background='transparent'">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Change Password
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Overlay -->
+<div id="app-settings-overlay" onclick="if(event.target===this)closeSettingsOverlay()" style="display:none;position:fixed;inset:0;background:rgba(22,29,34,0.4);z-index:9200;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+  <div style="background:var(--bg);border-radius:var(--r);box-shadow:var(--sh-lg);width:100%;max-width:480px;margin:24px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border-s);background:var(--bg-mid);">
+      <span style="font-weight:700;font-size:16px;color:var(--head)">Settings</span>
+      <button onclick="closeSettingsOverlay()" aria-label="Close Settings" style="width:28px;height:28px;border-radius:6px;border:none;background:var(--bg);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding:24px;">
+      <div style="margin-bottom:20px;">
+        <label for="settings-doctype-select" style="display:block;font-size:13px;font-weight:600;color:var(--head);margin-bottom:6px;">Document Type</label>
+        <select id="settings-doctype-select" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--body);font-family:inherit;font-size:14px;"></select>
+      </div>
+      <div style="margin-bottom:20px;">
+        <label for="settings-threshold-slider" style="display:block;font-size:13px;font-weight:600;color:var(--head);margin-bottom:6px;">Confidence Threshold</label>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <input type="range" id="settings-threshold-slider" min="0" max="1" step="0.01" value="0.95" style="flex:1;accent-color:var(--brand);">
+          <input type="number" id="settings-threshold-input" min="0" max="1" step="0.01" value="0.95" style="width:72px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-family:inherit;font-size:14px;text-align:center;">
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">Fields at or above this confidence are auto-approved.</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button onclick="saveSettings()" style="padding:8px 20px;border-radius:8px;border:none;background:var(--brand);color:white;font-weight:600;cursor:pointer;font-family:inherit;font-size:14px;">Save</button>
+        <span id="settings-msg" role="status" aria-live="polite" style="font-size:13px;"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Users Overlay -->
+<div id="app-users-overlay" onclick="if(event.target===this)closeUsersOverlay()" style="display:none;position:fixed;inset:0;background:rgba(22,29,34,0.4);z-index:9200;align-items:flex-start;justify-content:center;backdrop-filter:blur(3px);overflow-y:auto;padding:40px 24px;">
+  <div style="background:var(--bg);border-radius:var(--r);box-shadow:var(--sh-lg);width:100%;max-width:640px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border-s);background:var(--bg-mid);">
+      <span style="font-weight:700;font-size:16px;color:var(--head)">Users</span>
+      <button onclick="closeUsersOverlay()" aria-label="Close Users" style="width:28px;height:28px;border-radius:6px;border:none;background:var(--bg);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding:20px;">
+      <span id="users-msg" role="status" aria-live="polite" style="font-size:13px;display:block;min-height:18px;margin-bottom:8px;"></span>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:6px 12px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Username</th>
+            <th style="text-align:left;padding:6px 12px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Role</th>
+            <th style="padding:6px 12px;"></th>
+            <th style="padding:6px 12px;"></th>
+          </tr>
+        </thead>
+        <tbody id="users-table-body"></tbody>
+      </table>
+      <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border-s);">
+        <div style="font-weight:600;font-size:14px;color:var(--head);margin-bottom:12px;">Add User</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <input id="new-user-username" type="text" placeholder="Username" aria-label="Username" autocomplete="username" style="padding:8px 10px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:14px;">
+          <input id="new-user-password" type="password" placeholder="Password" aria-label="Password" autocomplete="new-password" style="padding:8px 10px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:14px;">
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <select id="new-user-role" aria-label="Role" style="padding:8px 10px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:14px;">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+          <button onclick="addUser()" style="padding:8px 18px;border-radius:8px;border:none;background:var(--brand);color:white;font-weight:600;cursor:pointer;font-family:inherit;font-size:14px;">Add User</button>
+          <span id="add-user-msg" role="alert" aria-live="assertive" style="font-size:13px;"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Change Password Modal -->
+<div id="app-changepw-modal" onclick="if(event.target===this)closeChangePasswordModal()" style="display:none;position:fixed;inset:0;background:rgba(22,29,34,0.4);z-index:9200;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+  <div style="background:var(--bg);border-radius:var(--r);box-shadow:var(--sh-lg);width:100%;max-width:380px;margin:24px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border-s);background:var(--bg-mid);">
+      <span style="font-weight:700;font-size:16px;color:var(--head)">Change Password</span>
+      <button onclick="closeChangePasswordModal()" aria-label="Close Change Password" style="width:28px;height:28px;border-radius:6px;border:none;background:var(--bg);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding:24px;display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <label for="changepw-current" style="display:block;font-size:13px;font-weight:600;color:var(--head);margin-bottom:5px;">Current Password</label>
+        <input id="changepw-current" type="password" autocomplete="current-password" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:14px;">
+      </div>
+      <div>
+        <label for="changepw-new" style="display:block;font-size:13px;font-weight:600;color:var(--head);margin-bottom:5px;">New Password</label>
+        <input id="changepw-new" type="password" autocomplete="new-password" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:14px;">
+      </div>
+      <div>
+        <label for="changepw-confirm" style="display:block;font-size:13px;font-weight:600;color:var(--head);margin-bottom:5px;">Confirm New Password</label>
+        <input id="changepw-confirm" type="password" autocomplete="new-password" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:14px;" onkeydown="if(event.key==='Enter')submitChangePassword()">
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button onclick="submitChangePassword()" style="padding:9px 22px;border-radius:8px;border:none;background:var(--brand);color:white;font-weight:600;cursor:pointer;font-family:inherit;font-size:14px;">Update Password</button>
+        <span id="changepw-msg" role="alert" aria-live="assertive" style="font-size:13px;"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Auth/UI: all functions defined here are global (non-module script) ────
+
+// Show admin-only drawer items if current user is admin
+(function() {
+  var u = window.__APP_USER__;
+  if (u && u.role === 'admin') {
+    var adminItems = document.getElementById('drawer-admin-items');
+    if (adminItems) adminItems.style.display = '';
+  }
+})();
+
+// Drawer & overlay open/close
+window.openAppDrawer = function() {
+  document.getElementById('app-drawer-overlay').style.display = 'block';
+  document.getElementById('app-drawer').style.left = '0';
+  document.getElementById('app-menu-btn').setAttribute('aria-expanded', 'true');
+};
+window.closeAppDrawer = function() {
+  document.getElementById('app-drawer-overlay').style.display = 'none';
+  document.getElementById('app-drawer').style.left = '-260px';
+  document.getElementById('app-menu-btn').setAttribute('aria-expanded', 'false');
+};
+window.openSettingsOverlay = function() {
+  closeAppDrawer();
+  const ov = document.getElementById('app-settings-overlay');
+  ov.style.display = 'flex';
+  const sel = document.getElementById('settings-doctype-select');
+  sel.innerHTML = '';
+  const schemaTypes = window.__SCHEMA__ && window.__SCHEMA__.doc_types ? window.__SCHEMA__.doc_types : {};
+  for (const [k, v] of Object.entries(schemaTypes)) {
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = v;
+    sel.appendChild(opt);
+  }
+  apiFetch('/api/settings').then(function(d) {
+    _settingsData = d.thresholds || {};
+    updateSettingsSlider();
+  }).catch(() => {});
+};
+window.closeSettingsOverlay = function() {
+  document.getElementById('app-settings-overlay').style.display = 'none';
+  document.getElementById('settings-msg').textContent = '';
+};
+window.openUsersOverlay = function() {
+  closeAppDrawer();
+  document.getElementById('app-users-overlay').style.display = 'flex';
+  loadUsersTable();
+};
+window.closeUsersOverlay = function() {
+  document.getElementById('app-users-overlay').style.display = 'none';
+  document.getElementById('users-msg').textContent = '';
+  document.getElementById('add-user-msg').textContent = '';
+};
+window.openChangePasswordModal = function() {
+  closeAppDrawer();
+  document.getElementById('app-changepw-modal').style.display = 'flex';
+  document.getElementById('changepw-current').value = '';
+  document.getElementById('changepw-new').value = '';
+  document.getElementById('changepw-confirm').value = '';
+  document.getElementById('changepw-msg').textContent = '';
+};
+window.closeChangePasswordModal = function() {
+  document.getElementById('app-changepw-modal').style.display = 'none';
+};
+
+// ── Settings helpers ──────────────────────────────────────────────────────
+var _settingsData = {};
+function updateSettingsSlider() {
+  var sel = document.getElementById('settings-doctype-select');
+  var dt = sel.value;
+  var val = _settingsData[dt] !== undefined ? _settingsData[dt] : 0.95;
+  document.getElementById('settings-threshold-slider').value = val;
+  document.getElementById('settings-threshold-input').value = parseFloat(val).toFixed(2);
+}
+// Wire slider <-> number input — deferred so overlay HTML exists
+document.addEventListener('DOMContentLoaded', function() {
+  var selEl = document.getElementById('settings-doctype-select');
+  if (selEl) selEl.addEventListener('change', updateSettingsSlider);
+  var slider = document.getElementById('settings-threshold-slider');
+  var numInput = document.getElementById('settings-threshold-input');
+  if (slider) slider.addEventListener('input', function() {
+    numInput.value = parseFloat(slider.value).toFixed(2);
+  });
+  if (numInput) numInput.addEventListener('input', function() {
+    var v = parseFloat(numInput.value);
+    if (!isNaN(v) && v >= 0 && v <= 1) slider.value = v;
+  });
+});
+function saveSettings() {
+  var sel = document.getElementById('settings-doctype-select');
+  var numInput = document.getElementById('settings-threshold-input');
+  var msg = document.getElementById('settings-msg');
+  var doc_type = sel.value;
+  var threshold = parseFloat(numInput.value);
+  if (isNaN(threshold) || threshold < 0 || threshold > 1) {
+    msg.style.color = 'var(--danger)'; msg.textContent = 'Threshold must be between 0 and 1.';
+    return;
+  }
+  apiPost('/api/settings', {doc_type: doc_type, threshold: threshold}).then(function() {
+    _settingsData[doc_type] = threshold;
+    msg.style.color = 'var(--brand)'; msg.textContent = 'Saved.';
+    setTimeout(function() { msg.textContent = ''; }, 3000);
+  }).catch(function(e) {
+    msg.style.color = 'var(--danger)'; msg.textContent = e.message || 'Error saving.';
+  });
+}
+
+// ── Password policy (sourced from the server so the UI can never disagree) ──
+// apiFetch lives in the module script, which is DEFERRED — it has not executed
+// yet while this classic script is running, so calling it at top level throws
+// "apiFetch is not defined" and kills the rest of this script. Wait for the
+// module to have run (deferred scripts finish before DOMContentLoaded).
+var _pwMin = 12;
+document.addEventListener('DOMContentLoaded', function() {
+  window.apiFetch('/api/password-policy')
+    .then(function(d) { if (d && d.min_length) _pwMin = d.min_length; })
+    .catch(function() {});
+});
+
+// ── Users helpers ─────────────────────────────────────────────────────────
+function loadUsersTable() {
+  apiFetch('/api/users').then(function(users) {
+    var tbody = document.getElementById('users-table-body');
+    tbody.innerHTML = '';
+    var me = window.__APP_USER__ && window.__APP_USER__.username;
+
+    users.forEach(function(u) {
+      var isSelf = u.username === me;
+      var tr = document.createElement('tr');
+
+      // Built with textContent, not interpolated into an onclick string.
+      // HTML-escaping is the wrong encoding for a JS-string context, so a
+      // username containing a quote used to break out of the handler.
+      var tdUser = document.createElement('td');
+      tdUser.style.padding = '8px 12px';
+      tdUser.textContent = u.username;
+      if (isSelf) {
+        var you = document.createElement('span');
+        you.style.cssText = 'font-size:11px;color:var(--muted);margin-left:4px;';
+        you.textContent = '(you)';
+        tdUser.appendChild(you);
+      }
+
+      var tdRole = document.createElement('td');
+      tdRole.style.padding = '8px 12px';
+      tdRole.textContent = u.role;
+
+      var tdReset = document.createElement('td');
+      tdReset.style.padding = '8px 12px';
+      var resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.textContent = 'Reset PW';
+      resetBtn.style.cssText = 'padding:3px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg-mid);cursor:pointer;font-size:12px;font-family:inherit;';
+      resetBtn.dataset.uid = u.uid;
+      resetBtn.dataset.username = u.username;
+      resetBtn.addEventListener('click', function() {
+        resetUserPassword(this.dataset.uid, this.dataset.username);
+      });
+      tdReset.appendChild(resetBtn);
+
+      var tdDel = document.createElement('td');
+      tdDel.style.padding = '8px 12px';
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.textContent = 'Delete';
+      delBtn.disabled = isSelf;
+      delBtn.style.cssText = 'padding:3px 10px;border-radius:5px;border:1px solid #fecaca;background:var(--danger-bg);color:var(--danger);cursor:pointer;font-size:12px;font-family:inherit;';
+      delBtn.dataset.uid = u.uid;
+      delBtn.dataset.username = u.username;
+      delBtn.addEventListener('click', function() {
+        deleteUser(this.dataset.uid, this.dataset.username);
+      });
+      tdDel.appendChild(delBtn);
+
+      tr.appendChild(tdUser); tr.appendChild(tdRole);
+      tr.appendChild(tdReset); tr.appendChild(tdDel);
+      tbody.appendChild(tr);
+    });
+    document.getElementById('users-msg').textContent = '';
+  }).catch(function(e) {
+    document.getElementById('users-msg').textContent = e.message || 'Failed to load users.';
+  });
+}
+
+function addUser() {
+  var username = document.getElementById('new-user-username').value.trim();
+  var password = document.getElementById('new-user-password').value;
+  var role = document.getElementById('new-user-role').value;
+  var msg = document.getElementById('add-user-msg');
+  if (!username || !password) {
+    msg.style.color = 'var(--danger)'; msg.textContent = 'Username and password required.'; return;
+  }
+  if (password.length < _pwMin) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Password must be at least ' + _pwMin + ' characters.';
+    return;
+  }
+  apiPost('/api/users', {username: username, password: password, role: role}).then(function() {
+    msg.style.color = 'var(--brand)'; msg.textContent = 'User created.';
+    document.getElementById('new-user-username').value = '';
+    document.getElementById('new-user-password').value = '';
+    loadUsersTable();
+  }).catch(function(e) {
+    msg.style.color = 'var(--danger)'; msg.textContent = e.message || 'Error.';
+  });
+}
+
+function deleteUser(uid, username) {
+  if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+  var m = document.getElementById('users-msg');
+  apiFetch('/api/users/' + encodeURIComponent(uid), {method: 'DELETE'})
+    .then(function() { loadUsersTable(); })
+    .catch(function(e) { m.style.color = 'var(--danger)'; m.textContent = e.message || 'Error.'; });
+}
+
+function resetUserPassword(uid, username) {
+  var pw = prompt('New password for "' + username + '" (min ' + _pwMin + ' chars):');
+  if (pw === null) return;
+  if (pw.length < _pwMin) { alert('Password must be at least ' + _pwMin + ' characters.'); return; }
+  var m = document.getElementById('users-msg');
+  apiPost('/api/users/' + encodeURIComponent(uid) + '/reset-password', {password: pw})
+    .then(function() {
+      m.style.color = 'var(--brand)';
+      m.textContent = 'Password reset. That user must sign in again.';
+      setTimeout(function() { m.textContent = ''; }, 4000);
+    })
+    .catch(function(e) { m.style.color = 'var(--danger)'; m.textContent = e.message || 'Error.'; });
+}
+
+// ── Change Password ───────────────────────────────────────────────────────
+function submitChangePassword() {
+  var current = document.getElementById('changepw-current').value;
+  var newPw   = document.getElementById('changepw-new').value;
+  var confirmPw = document.getElementById('changepw-confirm').value;
+  var msg     = document.getElementById('changepw-msg');
+  if (newPw !== confirmPw) {
+    msg.style.color = 'var(--danger)'; msg.textContent = 'New passwords do not match.'; return;
+  }
+  if (newPw.length < _pwMin) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'New password must be at least ' + _pwMin + ' characters.';
+    return;
+  }
+  apiPost('/api/change-password', {current_password: current, new_password: newPw})
+    .then(function() {
+      msg.style.color = 'var(--brand)'; msg.textContent = 'Password changed.';
+      setTimeout(function() { closeChangePasswordModal(); }, 1500);
+    })
+    .catch(function(e) {
+      msg.style.color = 'var(--danger)'; msg.textContent = e.message || 'Error.';
+    });
+}
+
+// ── Logout ────────────────────────────────────────────────────────────────
+function appLogout() {
+  var form = document.createElement('form');
+  form.method = 'POST'; form.action = '/logout';
+  // Unsafe methods carry the CSRF token; a form POST cannot set a header.
+  var tok = document.createElement('input');
+  tok.type = 'hidden'; tok.name = 'csrf_token'; tok.value = window.__CSRF_TOKEN__;
+  form.appendChild(tok);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+// ── Escape key closes overlays ────────────────────────────────────────────
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeSettingsOverlay();
+    closeUsersOverlay();
+    closeChangePasswordModal();
+    closeAppDrawer();
+  }
+});
+
+// ── User display in header ────────────────────────────────────────────────
+(function() {
+  var u = window.__APP_USER__;
+  if (u) {
+    var el = document.getElementById('app-user-display');
+    if (el) el.textContent = u.username;
+  }
+})();
+</script>
+
+</body>
+</html>
